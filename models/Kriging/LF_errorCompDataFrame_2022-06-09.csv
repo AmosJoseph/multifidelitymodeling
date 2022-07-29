@@ -1,0 +1,13 @@
+Original Kernel,Optimized Kernel,NRMSE (Pressure),NRMSE (Heat Transfer),R^2 (Pressure),R^2 (Heat Transfer)
+10**2 * RBF(length_scale=0.1) + WhiteKernel(noise_level=1),5.31**2 * RBF(length_scale=5.08) + WhiteKernel(noise_level=0.00179),0.00607,0.00134,0.9978,0.9989
+"1**2 * RationalQuadratic(alpha=0.1, length_scale=1)","4.33**2 * RationalQuadratic(alpha=0.00285, length_scale=12.1)",0.00752,0.00199,0.9965,0.9975
+"1**2 * Matern(length_scale=1, nu=2.5)","0.785**2 * Matern(length_scale=1.85, nu=2.5)",0.00787,0.00209,0.9962,0.9973
+"1**2 + Matern(length_scale=0.1, nu=1.5) + WhiteKernel(noise_level=1)","0.00316**2 + Matern(length_scale=7.53, nu=1.5) + WhiteKernel(noise_level=0.00121)",0.006,0.00146,0.9978,0.9987
+"3.01**2 * RationalQuadratic(alpha=0.00531, length_scale=0.712)","4.33**2 * RationalQuadratic(alpha=0.00285, length_scale=12.1)",0.00752,0.00199,0.9965,0.9975
+,,,,,
+,,NRMSE Sum,R^2 Sum,,
+,,0.00741,1.9967,,
+,,0.00951,1.994,,
+,,0.00996,1.9935,,
+,,0.00746,1.9965,,
+,,0.00951,1.994,,

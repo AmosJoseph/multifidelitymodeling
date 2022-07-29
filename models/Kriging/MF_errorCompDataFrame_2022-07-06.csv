@@ -1,0 +1,10 @@
+Original Kernel,Optimized Kernel,NRMSE (Pressure),NRMSE (Heat Transfer),R^2 (Pressure),R^2 (Heat Transfer)
+"0.0873**2 + Matern(length_scale=7.53, nu=1.5) + WhiteKernel(noise_level=0.00121)","0.066**2 + Matern(length_scale=10.3, nu=1.5) + WhiteKernel(noise_level=0.000259)",0.00118,0.00149,0.9978,0.9995
+5.31**2 * RBF(length_scale=5.08) + WhiteKernel(noise_level=0.00179),1.77**2 * RBF(length_scale=4.71) + WhiteKernel(noise_level=0.00136),0.00108,0.00168,0.997,0.9994
+"4.33**2 * RationalQuadratic(alpha=0.00285, length_scale=12.1)","3.42**2 * RationalQuadratic(alpha=0.00625, length_scale=17)",0.00221,0.00194,0.997,0.9992
+2.28**2 * RBF(length_scale=3.09) + WhiteKernel(noise_level=0.002),1.77**2 * RBF(length_scale=4.71) + WhiteKernel(noise_level=0.00136),0.00108,0.00168,0.997,0.9994
+"1.54**2 * Matern(length_scale=3.7, nu=2.5) + WhiteKernel(noise_level=0.00121)","1.94**2 * Matern(length_scale=8.75, nu=2.5) + WhiteKernel(noise_level=0.000757)",0.00091,0.00143,0.9976,0.9995
+2.75**2 * RBF(length_scale=3.48) + WhiteKernel(noise_level=0.00161),1.77**2 * RBF(length_scale=4.71) + WhiteKernel(noise_level=0.00136),0.00108,0.00168,0.997,0.9994
+1.02**2 * RBF(length_scale=9.74),1**2 * RBF(length_scale=1e-05),0.06765,0.07887,-0.0588,-0.1761
+"1**2 + Matern(length_scale=0.1, nu=1.5) + WhiteKernel(noise_level=1)","0.0702**2 + Matern(length_scale=10.3, nu=1.5) + WhiteKernel(noise_level=0.000259)",0.00118,0.0015,0.9978,0.9995
+"34.4**2 * RBF(length_scale=41.8) + 3.27**2 * RBF(length_scale=180) * ExpSineSquared(length_scale=1.44, periodicity=1) + 0.446**2 * RationalQuadratic(alpha=17.7, length_scale=0.957) + 0.197**2 * RBF(length_scale=0.138) + WhiteKernel(noise_level=0.0336)","0.00316**2 * RBF(length_scale=2.03e+04) + 0.00332**2 * RBF(length_scale=129) * ExpSineSquared(length_scale=3.11, periodicity=61.7) + 0.0212**2 * RationalQuadratic(alpha=58.3, length_scale=5.01e-05) + 1.77**2 * RBF(length_scale=4.71) + WhiteKernel(noise_level=0.000912)",0.00108,0.00168,0.997,0.9994

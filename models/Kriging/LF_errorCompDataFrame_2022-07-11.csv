@@ -1,0 +1,12 @@
+Original Kernel,Optimized Kernel,NRMSE (Pressure),NRMSE (Heat Transfer),R^2 (Pressure),R^2 (Heat Transfer)
+10**2 * RBF(length_scale=0.1) + WhiteKernel(noise_level=1),5.15**2 * RBF(length_scale=5.01) + WhiteKernel(noise_level=0.00288),0.00607,0.00135,0.9978,0.9988
+2.44**2 * RBF(length_scale=2.41),0.99**2 * RBF(length_scale=1e-05),0.07963,0.02845,-0.0026,-0.0017
+"1**2 * RationalQuadratic(alpha=0.1, length_scale=1)","4.29**2 * RationalQuadratic(alpha=0.00286, length_scale=10.8)",0.00723,0.00192,0.9968,0.9976
+"1**2 * Matern(length_scale=1, nu=2.5)","0.759**2 * Matern(length_scale=1.64, nu=2.5)",0.00777,0.00209,0.9963,0.9973
+"1**2 + Matern(length_scale=0.1, nu=1.5) + WhiteKernel(noise_level=1)","0.0051**2 + Matern(length_scale=6.94, nu=1.5) + WhiteKernel(noise_level=0.00202)",0.00598,0.00146,0.9978,0.9987
+"3.01**2 * RationalQuadratic(alpha=0.00531, length_scale=0.712)","4.29**2 * RationalQuadratic(alpha=0.00286, length_scale=10.8)",0.00723,0.00192,0.9968,0.9976
+5.31**2 * RBF(length_scale=5.08) + WhiteKernel(noise_level=0.00179),5.15**2 * RBF(length_scale=5.01) + WhiteKernel(noise_level=0.00288),0.00607,0.00135,0.9978,0.9988
+2.28**2 * RBF(length_scale=3.09) + WhiteKernel(noise_level=0.002),5.15**2 * RBF(length_scale=5.01) + WhiteKernel(noise_level=0.00288),0.00607,0.00135,0.9978,0.9988
+"1.54**2 * Matern(length_scale=3.7, nu=2.5)","0.759**2 * Matern(length_scale=1.64, nu=2.5)",0.00777,0.00209,0.9963,0.9973
+2.75**2 * RBF(length_scale=3.48) + WhiteKernel(noise_level=0.00161),5.15**2 * RBF(length_scale=5.01) + WhiteKernel(noise_level=0.00288),0.00607,0.00135,0.9978,0.9988
+"34.4**2 * RBF(length_scale=41.8) + 3.27**2 * RBF(length_scale=180) * ExpSineSquared(length_scale=1.44, periodicity=1) + 0.446**2 * RationalQuadratic(alpha=17.7, length_scale=0.957) + 0.197**2 * RBF(length_scale=0.138) + WhiteKernel(noise_level=0.0336)","0.0183**2 * RBF(length_scale=0.00011) + 0.0792**2 * RBF(length_scale=219) * ExpSineSquared(length_scale=3.03e+04, periodicity=6.56e+03) + 11.6**2 * RationalQuadratic(alpha=0.211, length_scale=13.4) + 1.76**2 * RBF(length_scale=3.67e+04) + WhiteKernel(noise_level=0.00243)",0.00597,0.00133,0.9978,0.9989

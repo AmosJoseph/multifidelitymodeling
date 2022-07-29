@@ -1,0 +1,2834 @@
+    moveToWorkDir(location)
+    # The try/except syntax catches the error if we've already created the directory. 
+    kerasFolderName = 'LF_NN_'
+    dt = str(datetime.date.today())
+    kerasFolderName += dt
+
+    try: 
+        mkdirPath = os.path.join(path, kerasFolderName)
+        os.mkdir(mkdirPath)
+    except: 
+        pass 
+
+    # We won't be saving the NN in the same way that we save the GP model. Keras likes to save all kind of other stuff, with no intuitive way to change the file names.
+    # For version control purposes (really, to make sure we're not overwriting old models), we'll create a new folder for each saved model with the date included. 
+
+    kerasPath = path + '/' + kerasFolderName
+    os.chdir(kerasPath)
+
+    model = LF_NN
+    model.save(kerasPath)
+    
+    epochsDict = LF_NN_epochs
+    historyDict = LF_NN_history
+
+    epochsFilename = 'LF_NN_epochs'
+    historyFilename = 'LF_NN_history'
+    dt = str(datetime.date.today())
+    ext = '.pkl'
+    epochsFilename += '_' + dt + ext
+    historyFilename += '_' + dt + ext
+    pickle.dump(epochsDict, open(epochsFilename, 'wb'))
+    pickle.dump(historyDict, open(historyFilename, 'wb'))
+
+    moveToWorkDir(location)
+
+    desiredNumCasesForPlot = 20
+totalCases = len(X_test[:,0])
+casePlotRange= np.arange(0,totalCases,int((totalCases/desiredNumCasesForPlot)))
+casePlotRange= np.arange(0,totalCases,3)
+
+plt.rcParams["figure.figsize"] = (10,5)
+fig, axs = plt.subplots(1, 2)
+fig.tight_layout(pad=0.4, w_pad=0.5, h_pad=.5)
+fig.patch.set_facecolor('white')
+    
+for i, case in enumerate(casePlotRange):
+    labelstr = 'Mach inf: ' + str(M_inf_test[case]) + ',case:' + str(case)
+    maxHeatTransfer = qw_HF_krig_test_predict[case,:].max()
+    maxPressure = p_HF_krig_test_predict[case,:].max()
+    axs[0].scatter(qw_HF_krig_test_predict[case,:]/maxHeatTransfer,qw_HF_test_truth[case,:]/maxHeatTransfer, s=1, label = labelstr )
+    axs[1].scatter(p_HF_krig_test_predict[case,:]/maxPressure,p_HF_test_truth[case,:]/maxPressure, s=1, label = labelstr)
+
+
+    
+axs[1].plot([0, 1], [0, 1], color = 'k')
+axs[0].plot([0, 1], [0, 1], color = 'k')
+# axs[0].scatter(qw_predicted[389,:],qw[389,:], s=1, label = 'Case 389' )
+# axs[1].scatter(p_predicted[389,:],p[389,:], s=1)
+
+qw_HF_krig_R2 = 'R2: ' + str(round(r2_score(qw_HF_test_truth, qw_HF_krig_test_predict),4))
+p_HF_krig_R2 = 'R2: ' + str(round(r2_score(p_HF_test_truth, p_HF_krig_test_predict),4))
+
+axs[0].text(0.05, 0.85, qw_HF_krig_R2, transform=axs[0].transAxes, fontsize=14, verticalalignment='top', bbox=props)
+axs[1].text(0.05, 0.85, p_HF_krig_R2, transform=axs[1].transAxes, fontsize=14, verticalalignment='top', bbox=props)
+axs[0].set_title("Heat Transfer Predicitions vs Actual")
+axs[1].set_title("Pressure Predictions vs. Actual")
+axs[0].grid()
+axs[1].grid()
+axs[0].set_ylabel("True Value")
+axs[0].set_xlabel("Predicted Heat Transfer")
+axs[1].set_xlabel("Predicted Pressure")
+axs[0].legend(markerscale=10)
+# axs[1].legend(markerscale=10)
+
+################ LF Kriging Gen predictions and scale ############################3
+
+# Generate Predicitions
+numCases = len(X_train[:,0])+len(X_test[:,0])
+
+start = time.time()
+LF_krig_train_prediction = LF_krig.predict(X_train)
+LF_krig_test_prediction = LF_krig.predict(X_test)
+end = time.time()
+print('Prediction time per case: %0.7f seconds, %0.3f Hz ' % (((end-start)/numCases), 1/((end-start)/numCases)) )
+
+# Split prediction array into heat transfer and pressure distributions
+[qw_LF_krig_train_predict, p_LF_krig_train_predict] = np.hsplit(LF_krig_train_prediction, 2)
+[qw_LF_krig_test_predict, p_LF_krig_test_predict] = np.hsplit(LF_krig_test_prediction, 2)
+
+[qw_LF_train_truth, p_LF_train_truth] = np.hsplit(y_lf_train, 2)
+[qw_LF_test_truth, p_LF_test_truth] = np.hsplit(y_lf_test, 2)
+
+# q_lowFidelity has been scaled! It is called q_lowFidelity_Scaled. Min:-1.32. Max:3.69
+# p_lowFidelity_SE has been scaled! It is called p_lowFidelity_SE_Scaled. Min:-1.54. Max:3.89
+# (4, 400, 1)
+# (2, 400, 1284)
+# ['WallTemp_Scaled', 'Density_Scaled', 'Temperature_Scaled', 'Velocity_Scaled']
+# ['qw_Scaled', 'p_Scaled']
+
+dataSplitNames = [
+    '_krig_test_predict',
+    '_krig_train_predict',
+    '_test_truth',
+    '_train_truth',
+]
+
+for name in LFoutputVarNames:
+    ScalerName = name + '_OutputScaler'
+    for tail in dataSplitNames:
+        fullName = name + tail
+        locals()[fullName] = locals()[ScalerName].inverse_transform(locals()[fullName])
+        print(fullName + ' has been inverse transformed! It is called ' + fullName)
+
+
+##### LF NN Predicitions
+
+X_test_NN = np.hsplit(X_test,4)
+
+[qw_LF_NN_train_predict, p_LF_NN_train_predict] = LF_NN.predict(X_train_NN)
+[qw_LF_NN_test_predict, p_LF_NN_test_predict] = LF_NN.predict(X_test_NN)
+
+[qw_LF_train_truth, p_LF_train_truth] = np.hsplit(y_lf_train, 2)
+[qw_LF_test_truth, p_LF_test_truth] = np.hsplit(y_lf_test, 2)
+
+
+dataSplitNames = [
+    '_NN_test_predict',
+    '_NN_train_predict',
+    '_test_truth',
+    '_train_truth',
+]
+
+for name in LFoutputVarNames:
+    ScalerName = name + '_OutputScaler'
+    for tail in dataSplitNames:
+        fullName = name + tail
+        locals()[fullName] = locals()[ScalerName].inverse_transform(locals()[fullName])
+        print(fullName + ' has been inverse transformed! It is called ' + fullName)
+
+### Inverse transform and predict HF Kriging
+
+# Split prediction array into heat transfer and pressure distributions
+[qw_HF_krig_train_predict, p_HF_krig_train_predict] = np.hsplit(HF_krig_train_prediction, 2)
+[qw_HF_krig_test_predict, p_HF_krig_test_predict] = np.hsplit(HF_krig_test_prediction, 2)
+
+[qw_HF_train_truth, p_HF_train_truth] = np.hsplit(y_train, 2)
+[qw_HF_test_truth, p_HF_test_truth] = np.hsplit(y_test, 2)
+
+dataSplitNames = [
+    '_HF_krig_test_predict',
+    '_HF_krig_train_predict',
+    '_HF_test_truth',
+    '_HF_train_truth',
+]
+
+for name in outputVarNames:
+    ScalerName = name + '_OutputScaler'
+    for tail in dataSplitNames:
+        fullName = name + tail
+        locals()[fullName] = locals()[ScalerName].inverse_transform(locals()[fullName])
+        print(fullName + ' has been inverse transformed! It is called ' + fullName)
+
+# Generate Predicitions
+numCases = len(X_train[:,0]) + len(X_test[:,0])
+
+start = time.time()
+HF_krig_train_prediction = HF_krig.predict(X_train)
+HF_krig_test_prediction = HF_krig.predict(X_test)
+end = time.time()
+print('Prediction time per case: %0.7f seconds, %0.3f Hz ' % (((end-start)/numCases), 1/((end-start)/numCases)) )
+
+#### BOOKMARK 
+            ###################################################
+            # Test Input Data Split
+            # globals()[outputVarNames[0] + dataSplitNames[0]], globals()[outputVarNames[1] + dataSplitNames[0]] = np.hsplit(
+            #     globals()[dataSplitNames[0][1:]],2)
+            # print(
+            #     dataSplitNames[0][1:] + ' has been split into ' + outputVarNames[0] + dataSplitNames[0] + ' and ' + outputVarNames[1] + dataSplitNames[0])
+            # # Train Input Data Split
+            # globals()[outputVarNames[0] + dataSplitNames[1]], globals()[outputVarNames[1] + dataSplitNames[1]] = np.hsplit(
+            #     globals()[dataSplitNames[1][1:]],2)
+            # print(
+            # dataSplitNames[1][1:] + ' has been split into ' + outputVarNames[0] + dataSplitNames[1] + ' and ' + outputVarNames[1] + dataSplitNames[1])
+
+
+
+    # elif method == 'NN':
+    #     # Test Input Data Split
+    #     globals()[outputVarNames[0] + dataSplitNames[0]], globals()[outputVarNames[1] + dataSplitNames[0]] = globals()[modelName].predict(X_test)
+    #     print(modelName + ' generated ' + outputVarNames[0] + dataSplitNames[0] + ' and ' + outputVarNames[1] + dataSplitNames[0] + \
+    #         '. Predicitions on X_test')
+    #     # Train Input Data Split
+    #     globals()[outputVarNames[0] + dataSplitNames[1]], globals()[outputVarNames[1] + dataSplitNames[1]] = globals()[modelName].predict(X_train)      
+    #     print(modelName + ' generated ' + outputVarNames[0] + dataSplitNames[1] + ' and ' + outputVarNames[1] + dataSplitNames[1] + \
+    #         '. Predicitions on X_train')
+
+
+#     # Test Output Data Split
+#     globals()[outputVarNames[0] + dataSplitNames[2]], globals()[outputVarNames[1] + dataSplitNames[2]] = np.hsplit(
+#         y_test,2)
+
+# globals()[outputVarNames[0] + dataSplitNames[0]] = np.hsplit(X_test,2)[0]
+# globals()[outputVarNames[1] + dataSplitNames[0]] = np.hsplit(X_test,2)[1]
+
+# globals()[outputVarNames[0] + dataSplitNames[1]] = np.hsplit(X_train,2)[0]
+# globals()[outputVarNames[1] + dataSplitNames[1]] = np.hsplit(X_train,2)[1]
+
+# globals()[outputVarNames[0] + dataSplitNames[2]] = np.hsplit(y_test,2)[0]
+# globals()[outputVarNames[1] + dataSplitNames[2]] = np.hsplit(y_test,2)[1]
+
+# globals()[outputVarNames[0] + dataSplitNames[3]] = np.hsplit(y_train,2)[0]
+# globals()[outputVarNames[1] + dataSplitNames[3]] = np.hsplit(y_train,2)[1]
+
+#     print(
+#         'y_test' + ' has been split into ' + outputVarNames[0] + dataSplitNames[2] + ' and ' + outputVarNames[1] + dataSplitNames[2])
+
+#     # Train Output Data Split
+#     globals()[outputVarNames[0] + dataSplitNames[3]], globals()[outputVarNames[1] + dataSplitNames[3]] = np.hsplit(
+#         y_train,2)
+#     print(
+#         'y_train' + ' has been split into ' + outputVarNames[0] + dataSplitNames[3] + ' and ' + outputVarNames[1] + dataSplitNames[3])
+
+
+def oneToOneVisualizationPlot(case):
+    plt.rcParams["figure.figsize"] = (15,5)
+    fig, axs = plt.subplots(1, 2)
+    fig.tight_layout(pad=0.4, w_pad=1.5, h_pad=.5)
+    fig.patch.set_facecolor('white')
+
+    elbowLocation = 2.35
+    case = case
+    cm = plt.cm.get_cmap('cool')
+    zmax = 2.5
+    z = np.arange(0,zmax, zmax/qw_HF_krig_test_predict[case,:].shape[0])
+    #plot one case only
+    labelstr = 'Mach inf: ' + str(M_inf_test[case]) + ',case:' + str(case)
+    maxHeatTransfer = qw_HF_krig_test_predict[case,:].max()
+    maxPressure = p_HF_krig_test_predict[case,:].max()
+    x = qw_HF_krig_test_predict[case,:]/maxHeatTransfer
+    y = qw_HF_test_truth[case,:]/maxHeatTransfer
+    sc = axs[0].scatter(x, y ,c = z, s=80, label = labelstr, 
+                     cmap=cm,edgecolors='none',vmin=0,vmax=2.5 )
+    cbar = fig.colorbar(sc,ax = axs[0])
+    cbar.ax.set_title("x-location (meters)")
+    cbar.ax.plot([0, zmax], [elbowLocation]*2, 'w')
+    axs[0].plot([0, 1], [0, 1], color = 'k')
+
+    qw_HF_krig_R2 = 'R2: ' + str(round(r2_score(qw_HF_test_truth[case,:], qw_HF_krig_test_predict[case,:]),4))
+
+    axs[0].text(0.05, 0.85, qw_HF_krig_R2, transform=axs[0].transAxes, fontsize=14, verticalalignment='top', bbox=props)
+    axs[0].set_title("Heat Transfer Predicitions vs Actual")
+    axs[0].grid()
+    axs[0].set_ylabel("True Value")
+    axs[0].set_xlabel("Predicted Heat Transfer")
+
+    #############################################
+
+    sliceVal = 20 # this is the "ol' fashioned way" for the plt.plot argument "markevery=sliceVal." The command doesn't work in plt.scatter
+
+    maxHeatTransfer = qw_HF_krig_test_predict[case,:].max()
+    maxPressure = p_HF_krig_test_predict[case,:].max()
+
+    # plt.plot(theta_rbf, Tw_rbf, color='black', linestyle='solid', linewidth=2, marker='D', markersize=6,     mfc='white', markevery=5, label='RBF')
+    axs[1].plot(x_cc_sorted[0,idxWindowStart:], qw_HF_test_truth[case,:]/maxHeatTransfer, color='firebrick', linestyle='solid', linewidth=4, label='RANS CFD Output (Truth Data)')
+
+    axs[1].plot(x_cc_sorted[0,idxWindowStart:], qw_HF_krig_test_predict[case,:]/maxHeatTransfer, 
+                color='black', linestyle='-.', linewidth=2, label='Kriging Predicition')
+    axs[1].set_title("Predicted Heat Transfer",fontsize='x-large')
+    axs[1].set_ylabel("qw / qw_max", fontsize='x-large')
+    axs[1].set_xlabel('x (meters)')
+
+    axs[1].legend(fontsize='x-large')
+
+
+    testModel23May = build_model_parameterized(
+    input_data = X_train, 
+    output_data = y_train,
+    layerSizeList = lowFidelityLayerSizeList, 
+    rate = learningRate, 
+    regType = keras.regularizers.l2, 
+    regValue = regValue,
+    hiddenLayerActivation = tf.nn.tanh,
+    outputLayerActivation = tf.nn.leaky_relu,
+    kernelInitializer = tf.keras.initializers.GlorotUniform(),
+    optimizer = tf.keras.optimizers.Adamax,
+    loss = 'mse')
+
+testModelEpochs, testModelHistory = train_model_all_fidelity(
+    model = testModel23May, 
+    input_data = X_train, 
+    output_data = y_train,
+    numEpochs = numEpochs,
+    myBatchSize = None,
+    validData = (X_test, y_test))
+
+###################### Make verbose and callbacks an input
+
+desiredNumCasesForPlot = 5
+totalCases = X_test.shape[0]
+casePlotRange= np.arange(0,totalCases,int((totalCases/desiredNumCasesForPlot)))
+
+plt.rcParams["figure.figsize"] = (10,5)
+fig, axs = plt.subplots(1, 2)
+fig.tight_layout(pad=0.4, w_pad=0.5, h_pad=.5)
+fig.patch.set_facecolor('white')
+
+for case in casePlotRange:
+    labelstr = 'Case: ' + str(case)
+    maxHeatTransfer = max(qw_LF_NN_test_predict[case,:].max(),qw_LF_test_truth[case,:].max())
+    maxPressure = max(p_LF_NN_test_predict[case,:].max(),p_LF_test_truth[case,:].max())
+    axs[0].scatter(qw_LF_NN_test_predict[case,:]/maxHeatTransfer,qw_LF_test_truth[case,:]/maxHeatTransfer, s=1, label = labelstr )
+    axs[1].scatter(p_LF_NN_test_predict[case,:]/maxPressure,p_LF_test_truth[case,:]/maxPressure, s=1, label = labelstr)
+
+
+axs[0].plot([0, 1], [0, 1], color = 'grey', zorder = 0)
+axs[1].plot([0, 1], [0, 1], color = 'grey', zorder = 0)
+    
+axs[0].set_title("NN Heat Transfer Predicitions vs Actual")
+axs[1].set_title("NN Pressure Predictions vs. Actual")
+axs[0].grid()
+axs[1].grid()
+axs[0].set_ylabel("True Value")
+axs[0].set_xlabel("Predicted Heat Transfer")
+axs[1].set_xlabel("Predicted Pressure")
+
+    layer1size = 32 
+    layer2size = 64
+    numOutputData = 2
+    rate = 1.0e-3 #From Deep Learning w/ Python (Chollet)
+    # rate = 5.0e-2 # used by Dr. Reasor
+    reg = 1.0e-6
+    numEpochs = 10000
+    myBatchSize = None
+    validSplit = None
+
+    inputTrainingData_NN = np.hsplit(X_train, 4)
+    inputTestData_NN = np.hsplit(X_test, 4)
+
+    outputTrainingData_NN = np.hsplit(y_train,2)
+    outputTestData_NN = np.hsplit(y_test, 2)
+
+
+    print("inputTrainingData_NN shape: {}".format(np.shape(inputTrainingData_NN)))
+    print("inputTestData_NN shape: {}".format(np.shape(inputTestData_NN)))
+    print("total inputTrainingData shape: {}\n".format(np.shape(inputTrainingData)))
+
+    print("outputTrainingData_NN shape: {}".format(np.shape(outputTrainingData_NN)))
+    print("outputTestData_NN shape: {}".format(np.shape(outputTestData_NN)))
+    print("total outputTrainingData shape: {}".format(np.shape(outputTrainingData)))
+
+    numCases = str(len(WallTemp_Scaled[:,0]))
+    inputArraySize = str(WallTemp_Scaled.shape)
+    outputArraySize = str(qw_Scaled.shape)
+    numInput = str(len(inputVarNames))
+    numOutput = str(len(outputVarNames))
+    singleOutput = str(len(qw_Scaled[0,:]))
+
+    print('We are using %s cases. Meaning each input array is %s, each output array is %s \n' % 
+          (numCases, inputArraySize, outputArraySize))
+    print('Note: The network, as depicted below, will take data from one case at a time. Therefore,'
+         'the input data will be %s 1x1 arrays, and the output will be %s 1x%s arrays \n \n \n' % (numInput, numOutput, singleOutput ))
+    HF_NN = None #sometimes remnants of previously trained models can hang around, it's best to clear the variable first 
+    HF_NN = build_model_single_fidelity(WallTemp_Scaled, qw_Scaled, numOutputData, layer1size, layer2size, rate, reg)
+
+
+    if HFNNTrain: 
+
+#     numCases = str(len(inputTrainingData_NN[0]))
+#     inputArraySize = str(WallTemp_Scaled.shape)
+#     outputArraySize = str(qw_Scaled.shape)
+#     numInput = str(len(inputVarNames))
+#     numOutput = str(len(outputVarNames))
+#     singleOutput = str(len(qw_Scaled[0,:]))
+
+#     print('We are using %s cases. Meaning each input array is %s, each output array is %s \n' % 
+#           (numCases, inputArraySize, outputArraySize))
+#     print('Note: The network, as depicted below, will take data from one case at a time. Therefore,'
+#          'the input data will be %s 1x1 arrays, and the output will be %s 1x%s arrays \n \n \n' % (numInput, numOutput, singleOutput ))
+    HF_NN = None #sometimes remnants of previously trained models can hang around, it's best to clear the variable first 
+    HF_NN = build_model_single_fidelity(inputTrainingData_NN[0], outputTrainingData_NN[0], numOutputData, layer1size, layer2size, rate, reg)
+tf.keras.utils.plot_model(HF_NN,show_shapes=True)
+
+# Now that we have a prediction, we'll need inverse transform and see how well we did. 
+
+numTestCases = len(inputTestData_NN[0][:,0])
+numTrainCases = len(inputTrainingData_NN[0][:,0])
+
+start = time.time()
+[qw_HF_NN_test_predict, p_HF_NN_test_predict] = HF_NN.predict(inputTestData_NN)
+end = time.time()
+print('Prediction time per case (test data): %0.7f seconds, %0.3f Hz ' % (((end-start)/numTestCases), 1/((end-start)/numTestCases)) )
+
+start = time.time()
+[qw_HF_NN_train_predict, p_HF_NN_train_predict] = HF_NN.predict(inputTrainingData_NN)
+end = time.time()
+print('Prediction time per case (train data): %0.7f seconds, %0.3f Hz ' % (((end-start)/numTrainCases), 1/((end-start)/numTrainCases)) )
+
+[qw_HF_train_truth, p_HF_train_truth] = np.hsplit(y_train, 2)
+[qw_HF_test_truth, p_HF_test_truth] = np.hsplit(y_test, 2)
+
+dataSplitNames = [
+    '_HF_NN_test_predict',
+    '_HF_NN_train_predict',
+    '_HF_test_truth',
+    '_HF_train_truth',
+]
+
+for name in outputVarNames:
+    ScalerName = name + '_OutputScaler'
+    for tail in dataSplitNames:
+        fullName = name + tail
+        locals()[fullName] = locals()[ScalerName].inverse_transform(locals()[fullName])
+        print(fullName + ' has been inverse transformed! It is called ' + fullName)
+
+desiredNumCasesForPlot = 20
+totalCases = len(X_test[:,0])
+casePlotRange= np.arange(0,totalCases,int((totalCases/desiredNumCasesForPlot)))
+casePlotRange= np.arange(0,totalCases,3)
+
+plt.rcParams["figure.figsize"] = (10,5)
+fig, axs = plt.subplots(1, 2)
+fig.tight_layout(pad=0.4, w_pad=0.5, h_pad=.5)
+fig.patch.set_facecolor('white')
+
+for case in casePlotRange:
+    caseStr = 'Case: ' + str(case)
+    maxHeatTransfer = qw_HF_NN_test_predict[case,:].max()
+    maxPressure = p_HF_NN_test_predict[case,:].max()
+    axs[0].scatter(qw_HF_NN_test_predict[case,:]/maxHeatTransfer,qw_HF_test_truth[case,:]/maxHeatTransfer, s=1, label = caseStr)
+    axs[1].scatter(p_HF_NN_test_predict[case,:]/maxPressure,p_HF_test_truth[case,:]/maxPressure, s=1, label = caseStr)
+
+qw_HF_NN_R2 = 'R2: ' + str(round(r2_score(qw_HF_test_truth, qw_HF_NN_test_predict),4))
+p_HF_NN_R2 = 'R2: ' + str(round(r2_score(p_HF_test_truth, p_HF_NN_test_predict),4))
+
+axs[0].text(0.05, 0.85, qw_HF_NN_R2, transform=axs[0].transAxes, fontsize=14, verticalalignment='top', bbox=props)
+axs[1].text(0.05, 0.85, p_HF_NN_R2, transform=axs[1].transAxes, fontsize=14, verticalalignment='top', bbox=props)    
+axs[0].plot([0, 1], [0, 1], color = 'k')
+axs[1].plot([0, 1], [0, 1], color = 'k')
+axs[0].set_title("Heat Transfer Predicitions vs Actual")
+axs[1].set_title("Pressure Predictions vs. Actual")
+axs[0].grid()
+axs[1].grid()
+axs[0].set_ylabel("True Value")
+axs[0].set_xlabel("Predicted Heat Transfer")
+axs[1].set_xlabel("Predicted Pressure")
+
+# Generate Predicitions
+numCases = len(X_train[:,0]) + len(X_test[:,0])
+
+start = time.time()
+MF_krig_train_prediction = MF_krig.predict(X_train)
+MF_krig_test_prediction = MF_krig.predict(X_test)
+end = time.time()
+print('Prediction time per case: %0.7f seconds, %0.3f Hz ' % (((end-start)/numCases), 1/((end-start)/numCases)) )
+
+# Split prediction array into heat transfer and pressure distributions
+[qw_MF_krig_train_predict, p_MF_krig_train_predict] = np.hsplit(MF_krig_train_prediction, 2)
+[qw_MF_krig_test_predict, p_MF_krig_test_predict] = np.hsplit(MF_krig_test_prediction, 2)
+
+[qw_MF_train_truth, p_MF_train_truth] = np.hsplit(y_mf_train, 2)
+[qw_MF_test_truth, p_MF_test_truth] = np.hsplit(y_mf_test, 2)
+
+dataSplitNames = [
+    '_MF_krig_test_predict',
+    '_MF_krig_train_predict',
+    '_MF_test_truth',
+    '_MF_train_truth',
+]
+
+for name in outputVarNames:
+    ScalerName = name + '_OutputScaler'
+    for tail in dataSplitNames:
+        fullName = name + tail
+        locals()[fullName] = locals()[ScalerName].inverse_transform(locals()[fullName])
+        print(fullName + ' has been inverse transformed! It is called ' + fullName)
+        
+
+    # rate = 1.0e-4 #From Deep Learning w/ Python (Chollet)
+    # rate = 5.0e-2 # used by Dr. Reasor
+    rate = .001
+    reg = 1.0e-6
+    numEpochsMF = 5000
+    myBatchSize = None
+    validSplit = None
+    # multiFidelityRefSize = int(len(multiFidelityNN_input[1]))*2
+    multiFidelityRefSize = 5000
+
+    MF_NN = None
+    # MF_NN = build_model_multi_fidelity(
+    #     input_data = multiFidelityNN_input,
+    #     output_data = qw_Scaled,
+    #     ref_size = multiFidelityRefSize,
+    #     rate = rate,
+    #     reg = reg
+    # )
+    MF_NN = build_model_multi_fidelity_singleInSingleOut(
+        input_data = X_train, 
+        output_data = y_mf_train, 
+        layer1_size = multiFidelityRefSize, 
+        layer2_size = multiFidelityRefSize -1000,
+        layer3_size = multiFidelityRefSize - 2000,
+        rate = rate, 
+        reg = reg)
+
+tf.keras.utils.plot_model(MF_NN,show_shapes=True)
+
+def build_model_multi_fidelity_singleInSingleOut(input_data, output_data, layer1_size, layer2_size, layer3_size, rate, reg):
+    """
+
+    :param input_data: input parameters/features
+    :param output_data: outputs the NN is fitting
+    :param layer_size: reference size for building the NN model
+    :param rate: learning rate
+    :param reg: L2 regularization value to drop weights
+    :return:
+    """
+    inputlayershape = int(len(input_data[0,:]))
+    outputlayershape = int(len(output_data[0,:]))
+
+    inputs = tf.keras.Input(shape=(inputlayershape,))
+    
+    x = tf.keras.layers.Dense(layer1_size,activation=tf.nn.tanh,
+                kernel_regularizer=keras.regularizers.l2(reg),
+                kernel_initializer = tf.keras.initializers.GlorotUniform()
+                )(inputs)
+    x = tf.keras.layers.Dense(layer2_size,activation=tf.nn.tanh,
+                kernel_regularizer=keras.regularizers.l2(reg),
+                kernel_initializer = tf.keras.initializers.GlorotUniform()
+                )(x)
+    x = tf.keras.layers.Dense(layer3_size,activation=tf.nn.tanh,
+                kernel_regularizer=keras.regularizers.l2(reg),
+                kernel_initializer = tf.keras.initializers.GlorotUniform()
+                )(x)
+
+
+    # Repeat the "x = ...(x) " pattern to generate more layers if desired   
+   
+    outputs = tf.keras.layers.Dense(outputlayershape,activation=tf.nn.leaky_relu,
+                      kernel_regularizer= keras.regularizers.l2(reg),
+                      kernel_initializer = tf.keras.initializers.GlorotUniform(),
+                                     name = 'outputlayer')(x)
+
+    # outputs = tf.keras.layers.Dense(outputlayershape, activation=tf.nn.leaky_relu,
+    #                   kernel_regularizer= keras.regularizers.l2(reg),
+    #                   kernel_initializer = tf.keras.initializers.GlorotUniform())(x)
+    
+    model = tf.keras.Model(inputs=inputs,outputs=outputs)
+    
+    model.compile(optimizer=tf.keras.optimizers.Adamax(learning_rate=rate),
+             loss = "mse",
+             metrics = [tf.keras.metrics.MeanSquaredError(),
+                       tf.keras.metrics.RootMeanSquaredError(),])
+                       # "mae"])
+    tf.keras.utils.plot_model(model,show_shapes=True)
+    return model
+
+def build_model_multi_fidelity(input_data, output_data, ref_size, rate, reg):
+    """
+
+    :param input_data: input parameters/features
+    :param output_data: outputs the NN is fitting
+    :param ref_size: reference size for building the NN model
+    :param rate: learning rate
+    :param reg: L2 regularization value to drop weights
+    :return:
+    """
+    inputlayershape = int(len(input_data[0,:]))
+    outputlayershape = int(len(output_data[0,:]))
+
+    layer1_size = ref_size
+#     layer2_size = ref_size
+#     layer3_size = ref_size
+    inputs = tf.keras.Input(shape=(inputlayershape,))
+    
+    x = tf.keras.layers.Dense(layer1_size,activation=tf.nn.tanh,
+                kernel_regularizer=keras.regularizers.l2(reg),
+                kernel_initializer = tf.keras.initializers.GlorotUniform()
+                )(inputs)
+    x = tf.keras.layers.Dense(layer1_size,activation=tf.nn.tanh,
+                kernel_regularizer=keras.regularizers.l2(reg),
+                kernel_initializer = tf.keras.initializers.GlorotUniform()
+                )(x)
+    x = tf.keras.layers.Dense(layer1_size,activation=tf.nn.tanh,
+                kernel_regularizer=keras.regularizers.l2(reg),
+                kernel_initializer = tf.keras.initializers.GlorotUniform()
+                )(x)
+
+#     x = tf.keras.layers.Dense(layer1_size,activation=tf.nn.tanh,
+#                 kernel_regularizer=keras.regularizers.l2(reg),
+#                 kernel_initializer = tf.keras.initializers.GlorotUniform()
+#                 )(x)
+#     x = tf.keras.layers.Dense(layer1_size,activation=tf.nn.tanh,
+#                 kernel_regularizer=keras.regularizers.l2(reg),
+#                 kernel_initializer = tf.keras.initializers.GlorotUniform()
+#                 )(x)
+
+#     x = tf.keras.layers.Dense(layer1_size,activation=tf.nn.tanh,
+#                 kernel_regularizer=keras.regularizers.l2(reg),
+#                 kernel_initializer = tf.keras.initializers.GlorotUniform()
+#                 )(x)
+
+    #     x = tf.keras.layers.Dense(layer3_size,activation=tf.nn.tanh,
+#                 kernel_regularizer=keras.regularizers.l2(reg),
+#                 kernel_initializer = tf.keras.initializers.GlorotUniform()
+#                 )(x)
+
+    # Repeat the "x = ...(x) " pattern to generate more layers if desired   
+   
+    qw_layer = tf.keras.layers.Dense(outputlayershape,activation=tf.nn.leaky_relu,
+                      kernel_regularizer= keras.regularizers.l2(reg),
+                      kernel_initializer = tf.keras.initializers.GlorotUniform(),
+                                     name = 'wall_heat_transfer')(x)
+    
+    
+    P_layer = tf.keras.layers.Dense(outputlayershape, activation=tf.nn.leaky_relu,
+                  kernel_regularizer= keras.regularizers.l2(reg),
+                  kernel_initializer = tf.keras.initializers.GlorotUniform()
+                                    , name='wall_pressure')(x)
+    
+    outputs = [qw_layer, P_layer]
+
+    # outputs = tf.keras.layers.Dense(outputlayershape, activation=tf.nn.leaky_relu,
+    #                   kernel_regularizer= keras.regularizers.l2(reg),
+    #                   kernel_initializer = tf.keras.initializers.GlorotUniform())(x)
+    
+    model = tf.keras.Model(inputs=inputs,outputs=outputs)
+    
+    model.compile(optimizer=tf.keras.optimizers.Adamax(learning_rate=rate),
+             loss = "mse",
+             metrics = [tf.keras.metrics.MeanSquaredError(),
+                       tf.keras.metrics.RootMeanSquaredError(),])
+                       # "mae"])
+    tf.keras.utils.plot_model(model,show_shapes=True)
+    return model
+
+
+def build_model_single_fidelity(inputData, outputData, numOutputData, layer1size, layer2Size, rate, reg):
+    """
+
+    :param inputData: input parameters/features (only one (!!!!) of the arrays, not all of them)
+    :param outputData: the outputs the NN is fitting (only one (!!!!) of the arrays, not all of them)
+    :param numOutputData: number of outputs the NN will have
+    :param layer1size: reference size for building the NN model
+    :param layer2size: reference size for building the NN model
+    :param rate: learning rate
+    :param reg: L2 regularization value to drop weightss
+    :return:
+    """
+
+    inputlayershape = int(len(inputData[0,:]))
+    outputlayershape = int(len(outputData[0,:]))
+    
+    T_w = tf.keras.Input(shape=(inputlayershape,), name = 'walltemp')
+    rho = tf.keras.Input(shape=(inputlayershape,), name = 'freestream_density')
+    T_inf = tf.keras.Input(shape=(inputlayershape,), name = 'freestream_temp')
+    u_inf = tf.keras.Input(shape=(inputlayershape,), name = 'freestream_velocity')
+    
+    inputs = [T_w, rho , T_inf,u_inf]
+    
+    features = layers.Concatenate()(inputs)
+    
+    x = tf.keras.layers.Dense(layer1size,activation=tf.nn.tanh,
+                kernel_regularizer=keras.regularizers.l2(reg),
+                kernel_initializer = tf.keras.initializers.GlorotUniform()
+                )(features)
+    
+    x = tf.keras.layers.Dense(layer2size,activation=tf.nn.tanh,
+                kernel_regularizer=keras.regularizers.l2(reg),
+                kernel_initializer = tf.keras.initializers.GlorotUniform()
+                )(x)
+    
+#     x = tf.keras.layers.Dense(layer3_size,activation=tf.nn.tanh,
+#                 kernel_regularizer=keras.regularizers.l2(reg),
+#                 kernel_initializer = tf.keras.initializers.GlorotUniform()
+#                 )(x)
+    
+    qw_layer = tf.keras.layers.Dense(outputlayershape,activation=tf.nn.leaky_relu,
+                      kernel_regularizer= keras.regularizers.l2(reg),
+                      kernel_initializer = tf.keras.initializers.GlorotUniform(),
+                                     name = 'wall_heat_transfer')(x)
+    
+    
+    P_layer = tf.keras.layers.Dense(outputlayershape, activation=tf.nn.leaky_relu,
+                  kernel_regularizer= keras.regularizers.l2(reg),
+                  kernel_initializer = tf.keras.initializers.GlorotUniform()
+                                    , name='wall_pressure')(x)
+    
+    outputs = [qw_layer, P_layer]
+    
+    model = tf.keras.Model(inputs=inputs,outputs=outputs)
+    
+    model.compile(optimizer=tf.keras.optimizers.Adamax(learning_rate=rate),
+             loss = "mse",
+             metrics = [tf.keras.metrics.MeanSquaredError(),
+                       tf.keras.metrics.RootMeanSquaredError(),])
+                       # "mae"])
+    tf.keras.utils.plot_model(model,show_shapes=True)
+    return model
+
+    # from skopt.learning import GaussianProcessRegressor
+# from skopt.learning.gaussian_process.kernels import ConstantKernel, Matern
+# # Gaussian process with Matérn kernel as surrogate model
+
+# from sklearn.gaussian_process.kernels import (RBF, Matern, RationalQuadratic,
+#                                               ExpSineSquared, DotProduct,
+#                                               ConstantKernel)
+
+# noise_level = 0.1
+
+# kernels = [1.0 * RBF(length_scale=1.0, length_scale_bounds=(1e-1, 10.0)),
+#            1.0 * RationalQuadratic(length_scale=1.0, alpha=0.1),
+#            1.0 * ExpSineSquared(length_scale=1.0, periodicity=3.0,
+#                                 length_scale_bounds=(0.1, 10.0),
+#                                 periodicity_bounds=(1.0, 10.0)),
+#            ConstantKernel(0.1, (0.01, 10.0))
+#                * (DotProduct(sigma_0=1.0, sigma_0_bounds=(0.1, 10.0)) ** 2),
+#            1.0 * Matern(length_scale=1.0, length_scale_bounds=(1e-1, 10.0),
+#                         nu=2.5)]
+# for kernel in kernels:
+#     gpr = GaussianProcessRegressor(kernel=kernel, alpha=noise_level ** 2,
+#                                    normalize_y=True, noise="gaussian",
+#                                    n_restarts_optimizer=2
+#                                    )
+#     opt = Optimizer([(-2.0, 2.0)], base_estimator=gpr, n_initial_points=5,
+#                     acq_optimizer="sampling", random_state=42)
+#     fig = plt.figure()
+#     fig.suptitle(repr(kernel))
+#     for i in range(10):
+#         next_x = opt.ask()
+#         f_val = objective(next_x)
+#         res = opt.tell(next_x, f_val)
+#         if i >= 5:
+#             plot_optimizer(res, n_iter=i - 5, max_iters=5)
+#     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+#     plt.show()
+
+# import sklearn
+# gaussian_process.GaussianProcessRegressor().get_params().keys()
+# # params = dict()
+# # params['kernel'] = ['RBF', 'matern', 'rationalquadratic']
+# # params['length_scale_bounds'] = (1e-9, 1e7,'log-uniform')
+
+# from sklearn.gaussian_process.kernels import (RBF, Matern, RationalQuadratic,
+#                                               ExpSineSquared, DotProduct,
+#                                               ConstantKernel)
+# # cv = RepeatedStratifiedKFold(n_splits=10, n_repeats=3, random_state=1)
+
+# # opt = skopt.BayesSearchCV(
+# #     estimator = gaussian_process.GaussianProcessRegressor(),
+# #     search_spaces = params,
+# #     n_jobs = -1, #-1 means use all processors -- as parallel as possible
+# #     cv = cv
+# # )
+
+# # opt.fit(X_train,y_lf_train)
+# # print(opt.best_score_)
+# # print(opt.best_params_)
+
+# params = dict()
+# params['kernel'] = ('RBF', 'matern', 'rationalquadratic')
+# # params['RBF__length_scale_bounds'] = (1e-9, 1e7,'log-uniform')
+
+
+# cv = RepeatedStratifiedKFold(n_splits=10, n_repeats=3, random_state=1)
+
+# opt = GridSearchCV(
+#     estimator = sklearn.gaussian_process.GaussianProcessRegressor(),
+#     param_grid= params,
+#     n_jobs = -1, #-1 means use all processors -- as parallel as possible
+#     cv = None,
+#     verbose = 3
+# )
+
+# opt.fit(X_train,y_lf_train)
+# print(opt.best_score_)
+# print(opt.best_params_)
+
+
+
+class SimpleMLP(kt.HyperModel):
+    def __init__(self,regType,regValue, hiddenLayerActivation, outputLayerActivation,kernelInitializer, 
+    optimizer, loss, input_data,output_data):
+
+        self.regType = regType
+        self.regValue = regValue
+        self.hiddenLayerActivation = hiddenLayerActivation
+        self.outputLayerActivation = outputLayerActivation
+        self.kernelInitializer = kernelInitializer
+        self.optimizer = optimizer
+        self.loss = loss
+        self.input_data = input_data
+        self.output_data = output_data 
+
+    def build(self,hp):
+        inputlayershape = int(len(self.input_data[0,:]))
+        outputlayershape = int(len(self.output_data[0,:]))
+
+        hp_units = hp.Int('units', min_value=30, max_value=100, step=5)
+        hp_layers = hp.Int('layers', min_value=1, max_value =3,step=1)
+        hp_learning_rate = hp.Choice('learning_rate', values=[1e-2, 1e-3, 1e-4])
+        
+        model = keras.Sequential()
+        model.add(tf.keras.layers.Dense(inputlayershape))
+        for layer in np.arange(hp_layers):
+            model.add(tf.keras.layers.Dense(
+                hp_units,
+                activation = self.outputLayerActivation,
+                kernel_regularizer = self.regType(self.regValue),
+                kernel_initializer = self.kernelInitializer
+        ))
+        model.add(tf.keras.layers.Dense(outputlayershape))
+        model.compile(
+            optimizer = self.optimizer(learning_rate=hp_learning_rate),
+            loss = self.loss,
+            metrics = [tf.keras.metrics.MeanSquaredError()],
+            steps_per_execution=10
+                    )
+        return model
+
+
+## Tuner
+
+tuner3 = kt.Hyperband(
+    hypermodel = hypermodel,
+    objective = 'val_mean_squared_error',
+    max_epochs= 1000,
+    factor=3,
+    hyperband_iterations=1,
+    directory = os.path.normpath('C:/ktf'),
+    overwrite = True,
+    project_name='ktHB',
+    max_model_size = int(totalParamsTrainData)
+)
+tuner3.search_space_summary()
+
+# if LFKrigOptimize: 
+#   longKernel = 34.4**2 * RBF(length_scale=41.8) \
+#     + 3.27**2 * RBF(length_scale=180) \
+#       * ExpSineSquared(length_scale=1.44, periodicity=1) \
+#         + 0.446**2 * RationalQuadratic(alpha=17.7, length_scale=0.957) \
+#           + 0.197**2 * RBF(length_scale=0.138) + WhiteKernel(noise_level=0.0336)
+  
+#   kernels = [
+#     #100 * RBF(length_scale=0.1, length_scale_bounds=(1e-1, 10.0)),
+#     2.44**2 * RBF(length_scale=2.41),
+#     1.0 * RationalQuadratic(length_scale=1.0, alpha=0.1),
+#     ConstantKernel(0.1, (0.01, 10.0)) * (DotProduct(sigma_0=1.0, sigma_0_bounds=(0.1, 10.0)) ** 2),
+#     1.0 * Matern(length_scale=1.0, length_scale_bounds=(1e-1, 10.0),nu=2.5),
+#     ConstantKernel(1.0) + Matern(length_scale=0.1, nu=3/2) + WhiteKernel(noise_level=1)
+#     ]
+#     #longKernel
+#    # ]
+
+#   errorDict = {'Original Kernel':[],'Optimized Kernel':[],'NRMSE (Pressure)':[], 'NRMSE (Heat Transfer)':[],'R^2 (Pressure)':[], 'R^2 (Heat Transfer)':[]}
+#   for kernel in kernels:
+#     print('_'*25)
+#     print('Optimization begin for kernel: ' + str(kernel) + '\n')
+    
+#     krigTrain(
+#       X_train=X_train,
+#       y_train=y_lf_train, 
+#       fidelityLevel='LF',
+#       kernel=kernel, 
+#       n_restarts = 1,
+#       verbose = False
+#     )
+
+#     generateInverseTransformedPredictions(
+#     X_train = X_train,
+#     X_test = X_test,
+#     y_train = y_lf_train,
+#     y_test = y_lf_test,
+#     method = 'kriging',
+#     fidelityLevel = 'LF',
+#     verbose = False
+#     )
+
+#     [LF_krig_NRMSE_pressure, LF_krig_R2_pressure] = errorMetrics(
+#       truth = p_LF_test_truth,
+#       prediction = p_LF_krig_test_predict,
+#       fidelity = 'LF',
+#       model = 'Kriging',
+#       variable = 'Pressure',
+#       verbose = False)
+
+#     [LF_krig_NRMSE_heatTransfer, LF_krig_R2_heatTransfer] = errorMetrics( 
+#       truth = qw_LF_test_truth,
+#       prediction = qw_LF_krig_test_predict,
+#       fidelity = 'LF',
+#       model = 'Kriging',
+#       variable = 'Heat Transfer',
+#       verbose = False)
+    
+#     # errorDict[str(kernel)] = (LF_krig.kernel_, LF_krig_NRMSE_pressure, LF_krig_R2_pressure, LF_krig_NRMSE_heatTransfer, LF_krig_R2_heatTransfer)
+#     errorDict['Original Kernel'].append(kernel)
+#     errorDict['Optimized Kernel'].append(LF_krig.kernel_)
+#     errorDict['NRMSE (Pressure)'].append(LF_krig_NRMSE_pressure)
+#     errorDict['NRMSE (Heat Transfer)'].append(LF_krig_NRMSE_heatTransfer)
+#     errorDict['R^2 (Pressure)'].append(LF_krig_R2_pressure)
+#     errorDict['R^2 (Heat Transfer)'].append(LF_krig_R2_heatTransfer)
+#     print('Optimization complete for kernel: ' + str(kernel) + '-->' + str(LF_krig.kernel_) + '\n')
+#     print('_'*25)
+
+# pd.DataFrame.from_dict(errorDict)#.transpose()
+
+baseDir = 'c:\\Users\\tyler\\Desktop\\'
+ktDir = 'ktDir'
+tuner = kt.BayesianOptimization(
+    hypermodel = hypermodel,
+    objective = 'val_mean_squared_error',
+    max_trials = 100,
+    executions_per_trial = 2,
+    directory = os.path.normpath('C:/ktf'),
+    overwrite = True,
+    project_name='kt3'
+)
+tuner.search_space_summary()
+
+callbacks_list = [
+    keras.callbacks.EarlyStopping(
+        monitor = "val_mean_squared_error",mode="min",
+        patience=100, verbose=0,
+        restore_best_weights=False 
+        )
+    ]
+
+numEpochs = 1000
+validData = (X_test, y_lf_test)
+
+tuner2.search(
+    x=X_train,
+    y=y_lf_train,
+    batch_size=None,
+    epochs=numEpochs,
+    callbacks = [],
+    verbose=True,
+    shuffle=False,
+    validation_data=validData,
+    use_multiprocessing=True
+    )
+
+
+callbacks_list = [#]
+    keras.callbacks.EarlyStopping(
+    monitor = "val_mean_squared_error",mode="min",
+    patience=100, verbose=0,
+    restore_best_weights=False )]#,
+    # TqdmCallback(verbose=0)]
+#         keras.callbacks.ModelCheckpoint(
+#         filepath=checkpoint_path.keras,
+#         monitor="mean_squared_error")
+#         keras.callbacks.LearningRateScheduler(scheduler
+#         )
+# ]
+numEpochs = 1000
+validData = (X_test, y_lf_test)
+
+tuner.search(
+    x=X_train,
+    y=y_lf_train,
+    batch_size=None,
+    epochs=numEpochs,
+    callbacks = callbacks_list,
+    verbose=0,
+    shuffle=False,
+    validation_data=validData,
+    use_multiprocessing=True
+    )
+
+callbacks_list = [
+    keras.callbacks.EarlyStopping(
+        monitor = "val_mean_squared_error",mode="min",
+        patience=100, verbose=0,
+        restore_best_weights=False 
+        )
+    ]
+
+numEpochs = 1000
+validData = (X_test, y_lf_test)
+
+tuner3.search(
+    x=X_train,
+    y=y_lf_train,
+    batch_size=None,
+    epochs=numEpochs,
+    callbacks = callbacks_list,
+    verbose=True,
+    shuffle=False,
+    validation_data=validData,
+    use_multiprocessing=True
+    )
+
+
+        printCount = 0
+        # if method == 'krig':
+        for i in np.arange(len(outputVarNames)):
+            for j in np.arange(numDataSplit):
+                #Input Data Split
+                globals()[outputVarNames[j] + dataSplitNames[i]] = np.hsplit(globals()[dataSplitNames[i][1:]],numDataSplit)[j]
+                if verbose:
+                    print(dataSplitNames[i][1:] + ' part ' + str(j+1) + '--> ' + outputVarNames[j] + dataSplitNames[i])
+                globals()[outputVarNames[j] + dataSplitNames[i+2]] = np.hsplit(globals()[dataSplitNames[i+2][1:]],numDataSplit)[j]
+                if verbose:
+                    print(dataSplitNames[i+2][1:] + ' part ' + str(j+1) + '--> ' + outputVarNames[j] + dataSplitNames[i+2])
+        if verbose:
+            print('_'*15)
+            print('Total prediction time: %0.3f seconds. Prediction time per case: %0.7f seconds, %0.3f Hz ' \
+                % (end-start, ((end-start)/numCases), 1/((end-start)/numCases)) )
+            print('_'*15)
+
+            # # totalCases = X.shape[0]
+# matplotlib.rcParams.update(matplotlib.rcParamsDefault)
+# totalCases = qw.shape[0]
+# totalCaseArray = np.arange(0,totalCases)
+# totalCaseArray = [147,160,265,363,311,323,76,77,389,197]
+# totalCaseArray = 196
+
+# increment = 1
+# numIters = totalCases//increment
+# lowercount = 0
+# uppercount = increment
+# for iter in np.arange(numIters):
+#     currentArray = totalCaseArray[lowercount:uppercount]
+#     plotPressureHeatTransferSideBySideTruthData(
+#         caseIndexArray=currentArray,
+#         qw_truth = qw,
+#         p_truth = p
+#         )
+#     lowercount += increment
+#     uppercount += increment
+#     plt.show()
+#     # programPause = input("Press the <ENTER> key to continue...")
+
+
+
+# halfwayPoint = int(qw.shape[1]/2)
+
+# # let's look at the first half of the fluid scalars -- we're going to chop out the ones that have entirely negative qw distributions
+
+# qwChopped = qw[:,:halfwayPoint]
+# pChopped = p[:,:halfwayPoint]
+# qwMin = np.amin(qwChopped, axis=1)
+# pMin = np.amin(pChopped, axis=1)
+
+# negativeQwMin = np.argwhere(qwMin<0)
+# print(negativeQwMin)
+
+# # qwMax = np.amax(qw,axis=1)
+# # pMax = np.amax(p,axis=1)
+
+# # plt.scatter(np.arange(len(qwMin)), qwMin)
+# # plt.scatter(np.arange(len(qwMax)), qwMax)
+
+# plotPressureHeatTransferSideBySideTruthData(
+#     caseIndexArray=negativeQwMin,
+#     qw_truth = qw,
+#     p_truth = p
+#     )
+
+
+# testTruthList = [p_HF_test_truth, qw_HF_krig_test_predict]
+# testPredictList = [p_HF_krig_test_predict, qw_HF_krig_test_predict]
+# testDataList = [testTruthList, testPredictList]
+# for case in np.arange(totalTestCases):
+#     for data in testDataList:
+#         for testData in data:
+            
+#     score = r2_score
+#     errorList.append(score)b
+
+
+# halfwayPoint = int(qw.shape[1]/2)
+
+# # let's look at the first half of the fluid scalars -- we're going to chop out the ones that have entirely negative qw distributions
+
+# qwChopped = qw[:,:halfwayPoint]
+# pChopped = p[:,:halfwayPoint]
+# qwMin = np.amin(qwChopped, axis=1)
+# pMin = np.amin(pChopped, axis=1)
+
+# negativeQwMin = np.nonzero(qwMin<0)
+# positiveQwMin = np.nonzero(qwMin>0)
+
+# caseList = [negativeQwMin, positiveQwMin]
+# print('Percentage outliers: ', 100*(len(negativeQwMin[0])/(len(negativeQwMin[0]) + len(positiveQwMin[0]))))
+# plotInputSpace(
+#     caseList= caseList,
+#     inputVarNameList=inputVarNameList
+#     )
+
+if not superComputerTrain:
+
+  p.shape
+
+  caseWePick = 147
+
+  plt.rcParams["figure.figsize"] = (15,5)
+  fig, axs = plt.subplots(1, 2)
+  fig.tight_layout(pad=1.4, w_pad=2.5, h_pad=.5)
+  fig.patch.set_facecolor('white')
+
+  axs[0].plot(x_cc_sorted[caseWePick,idxWindowStart:], p[caseWePick,:], label = 'Pressure')
+  axs[1].plot(x_cc_sorted[caseWePick,idxWindowStart:], qw[caseWePick,:]/10000,label = 'Heat Transfer')
+
+  axs[0].set_ylabel("Pressure (Pa)")
+  axs[1].set_ylabel('Heat Transfer (w/cm^2')
+
+  axs[0].set_xlabel("x Distance Along Cone")
+  axs[1].set_xlabel("x Distance Along Cone")
+
+  axs[0].legend()
+  axs[1].legend()
+
+      # try: 
+    #     mkdirPath = os.path.join(path, kerasFolderName)
+    #     os.mkdir(mkdirPath)
+    # except: 
+    #     pass 
+
+    # kerasPath = path + '/' + kerasFolderName
+    # os.chdir(kerasPath)
+
+        # os.chdir(modelDir + '/' + krigDir)
+    # modelName = fidelityLevel + '_krig'
+    # model = globals()[modelName]
+    # filename = modelName + '_'
+    # dt = str(datetime.date.today())
+    # ext = '.sav'
+    # filename += dt + ext
+    # pickle.dump(model, open(filename, 'wb'))
+    # moveToWorkDir(location)
+
+moveToWorkDir(location)
+os.chdir(modelDir + '/' + NNDir)
+timeDF = pd.DataFrame(data=timeDict)
+filename = 'timePickle_' + fidelityLevel + '_'
+dt = str(datetime.date.today())
+ext = '.pkl'
+filename += dt + ext
+f = open(filename, 'wb')
+pickle.dump(timeDF, f)
+f.close()
+moveToWorkDir(location)
+
+    plt.scatter(numParamsList, MSElist, label = '')
+    for i, divider in enumerate(dividerList): 
+        label = str(round(divider*100,1)) + '% train data params'
+        plt.vlines(x=totalParamsTrainData*divider, ymin=np.min(NNminMSElist), ymax = np.max(NNminMSElist), linestyles = 'dashdot', label = label, color=c[i])
+    plt.xlabel('Number of Parameters')
+    plt.ylabel('Validation MSE')
+    plt.legend()
+    plt.show()
+
+        # modelList.append(LF_NN)
+        # epochsList.append(LF_NN_epochs)
+        # historyList.append(LF_NN_history)
+    # LFconvStudyDict2 = {
+    #     'numParams' : numParamsList,
+    #     'minMSE' : NNminMSElist,
+    #     'model' : modelList,
+    #     'epochs' : epochsList,
+    #     'history' : historyList,
+    #     }
+
+
+    # def moveToWorkDir(location):
+# # personalComputer = 1
+# # googleColab = 2
+# # osc = 3
+# # bolz = 4
+# # DoD = 5
+# # other = 6
+
+#     if location == 1: #personalComputer
+#         path = r'c:\\Users\\tyler\\Desktop\\oscDataPackage'
+#         tunerDir = os.path.normpath('C:/ktf')
+
+#     if location == 2: #googleColab
+#         # from google.colab import drive
+#         # drive.mount('/content/drive')
+#         path = r'/content/drive/MyDrive/Colab Notebooks'
+
+#     if location == 3: #osc 
+#         path = r"xxxxxxxx"
+
+#     if location == 4: #bolz
+#         path = r"/home/tyty/Desktop/CFD_Files/AFRL_Scholars/1st_Round_Ls"
+
+#     if location == 5: #DoD
+#         workdirPath = '/p/work/tek36/DoDDataPackage'
+#         tunerDir = '/p/work/tek36/tuner'+str(datetime.date.today())
+#         path = workdirPath
+
+#         try: 
+#             os.mkdir(tunerDir)
+#         except: 
+#             pass 
+
+#     if location == 6: #other
+#         path = r"customPath"
+
+#     os.chdir(path)
+#     # print('Current location: ', os.getcwd())
+
+# # Choose your location from the list below. If you are somewhere not listed below, use "other"
+# location = 1
+
+# # personalComputer = 1
+# # googleColab = 2
+# # osc = 3
+# # bolz = 4
+# # DoD = 5
+# # other = 6
+
+
+if LFNNConvergence:
+    numParamsList = []
+    NNminMSElist = []
+    completionTime = []
+    LFconvStudyDict = dict()
+
+    #input the number of neurons per layer. Length of this list indicates number of hidden layers
+    LFconvStudyLayerList = [ 
+        [64],
+        [72],
+        [80],
+        [40, 32],
+        [32, 64],
+        [56, 72],
+        [56, 80],
+        [80, 80],
+        [64, 80, 80],
+        [48, 56, 40],
+        [64, 80, 32],
+        [40, 56, 64],
+        [80, 80, 80],
+        [32, 64, 128],
+        [64, 128, 128+32]
+        ] 
+    annotations = [str(item) for item in LFconvStudyLayerList]
+    disallowed_characters = '[] '
+    dirAnnotations = []
+    for s in annotations:
+        for char in disallowed_characters:
+            s = s.replace(char, '')
+        s = s.replace(',','_')
+        dirAnnotations.append(s)
+
+    learningRate = 1.0e-3 #From Deep Learning w/ Python (Chollet)
+    regType = keras.regularizers.L2
+    regValue = 1.0e-6
+    hiddenLayerActivation = tf.nn.tanh
+    outputLayerActivation = tf.nn.leaky_relu
+    kernelInitializer = tf.keras.initializers.GlorotUniform()
+    optimizer = tf.keras.optimizers.Adamax
+    numEpochs = 10000
+    if quickTestRun:
+        numEpochs = 3
+    myBatchSize = 224
+    validSplit = None
+    loss = 'mse'
+    validData = (X_test, y_lf_test)
+
+    callbacks_list = [
+        keras.callbacks.EarlyStopping(
+            monitor = "val_mean_squared_error",mode="min",
+            patience=150, verbose=0,
+            restore_best_weights=False 
+            )
+        ]
+
+    LF_NN = None #sometimes remnants of previously trained models can hang around, it's best 
+                #to clear the variable first 
+    numIters = len(LFconvStudyLayerList)
+    convStudyTopDir = time.strftime("%Y%m%d-%H%M%S")
+    convStudyPath = os.path.join(path,modelDir,NNDir,convStudyDir)
+    os.chdir(convStudyPath)
+    os.mkdir(convStudyTopDir)
+    os.chdir(convStudyTopDir)
+
+    for i, layerSizeList in enumerate(LFconvStudyLayerList):
+        currentIter = i+1
+        LF_NN = build_model_parameterized(
+            input_data = X_train, 
+            output_data = y_lf_train,
+            layerSizeList = layerSizeList, 
+            rate = learningRate, 
+            regType = regType, 
+            regValue = regValue,
+            hiddenLayerActivation = hiddenLayerActivation,
+            outputLayerActivation = outputLayerActivation,
+            kernelInitializer = kernelInitializer,
+            optimizer = optimizer,
+            loss = loss)
+
+        LF_NN_epochs = None
+        LF_NN_history = None
+        print('Iteration ', str(currentIter), ' training start')
+        start = time.time()
+        LF_NN_epochs, LF_NN_history = train_model_all_fidelity(
+            model = LF_NN, 
+            input_data = X_train, 
+            output_data = y_lf_train,
+            numEpochs = numEpochs, 
+            myBatchSize = myBatchSize,
+            validData = validData,
+            callbacks_list= callbacks_list)
+
+        # Add an estimated time to completion print statement 
+
+        minMSE = np.min(LF_NN_history["val_mean_squared_error"])
+        numParams = LF_NN.count_params()
+
+        LFconvStudyDict[annotations[i]] = {
+        'numParams' : numParams,
+        'minMSE' : minMSE,
+        # 'model' : LF_NN,
+        'epochs' : LF_NN_epochs,
+        'history' : LF_NN_history,
+        }
+
+        numParamsList.append(numParams)
+        NNminMSElist.append(minMSE)
+
+        currentIterKerasDirName = 'iter' + str(i) + '_' + dirAnnotations[i] + '_convStudyModel'
+        # os.mkdir(currentIterKerasDirName)
+        kerasPath = os.path.join(convStudyPath,convStudyTopDir, currentIterKerasDirName)
+        LF_NN.save(kerasPath)
+        os.chdir(convStudyPath)
+
+        end = time.time()
+        currentIterTime = round((end-start),4)
+        completionTime.append(currentIterTime)
+        estimatedRemainingTime = (numIters - currentIter)*np.mean(completionTime)
+        print('Iteration ', str(i+1), ' of ',str(numIters) ,' training complete, time elapsed: ', str(round(currentIterTime/60,4)), ' minutes ', )
+        print('Estimated time to completion: ', str(round(estimatedRemainingTime/60,4)), ' minutes')
+        print('Number of epochs: ', len(LF_NN_epochs), 'original number of epochs: ', str(numEpochs))
+
+    saveVersionedPickle(
+    filename='LFconvStudyDict', 
+    objectToSave=LFconvStudyDict,
+    path = os.path.join(convStudyPath,currentConvStudyTopDir)
+    )
+    os.chdir(path)
+    print('Convergence study complete. ')
+
+#training the model 
+
+# def build_tuneable_model(hp):
+#     """
+
+#     :param input_data: input parameters/features
+#     :param output_data: outputs the NN is fitting
+#     :param layerSizeList: list of all the layer sizes. Number of values indicates number of layers
+#     :param rate: learning rate
+#     :param regType: the type of regularization used. Commonly L2
+#     :param regValue: regularization value to drop weights
+#     :param hiddenLayerActivation: activation function for hidden layers
+#     :param outputLayerActivation: activation function for output layer
+#     :param kernelInitializer: method for intializing parameters. Typically random, glorotuniform, etc.  
+#     :param optimizer: chosen optimizer
+#     :param loss: loss function to be optimized
+#     :param hp: used by KerasTuner to optimize the chosen hyper-parameters
+#     :return:
+#     """
+#     hp_units = hp.Int('units', min_value=32, max_value=512, step=32)
+#     hp_layers = hp.Int('layers', min_value=1, max_value =3,step=1)
+#     hp_learning_rate = hp.Choice('learning_rate', values=[1e-2, 1e-3, 1e-4])
+
+#     regType = 
+#     regValue = 
+#     hiddenLayerActivation = 
+#     outputLayerActivation = 
+#     kernelInitializer = 
+#     optimizer = 
+#     loss = 
+
+#     ######################### BOOKMARK
+    
+#     x = tf.keras.layers.Dense(
+#         units = hp_units,
+#         activation=hiddenLayerActivation,
+#         kernel_regularizer=regType(regValue),
+#         kernel_initializer = kernelInitializer
+#         )
+
+#     for layerSize in hp_layers:
+#         x = tf.keras.layers.Dense(
+#             layerSize,activation=hiddenLayerActivation,
+#             kernel_regularizer=regType(regValue),
+#             kernel_initializer = kernelInitializer
+#             )(x)
+
+#     outputs = tf.keras.layers.Dense(
+#         outputlayershape,
+#         activation = outputLayerActivation,
+#         kernel_regularizer = regType(regValue),
+#         kernel_initializer = kernelInitializer,
+#         name = 'outputlayer'
+#         )(x)
+    
+#     model = tf.keras.Model(inputs=inputs,outputs=outputs)
+    
+#     model.compile(optimizer=optimizer(learning_rate=hp_learning_rate),
+#              loss = loss,
+#              metrics = [tf.keras.metrics.MeanSquaredError()])#,
+#                        #tf.keras.metrics.RootMeanSquaredError(),])
+#                        # "mae"])
+#     try:
+#         tf.keras.utils.plot_model(model,show_shapes=True)
+#     except:
+#         print('Can\'t show the \'plot model\' thing')
+#     return model
+# #training the model 
+
+
+def saveVersionedPickle(filename, objectToSave, path):
+    baseName = filename
+    counter = 2
+    ext = '.pkl'
+    dt = str(datetime.date.today())
+    while os.path.exists('./' + filename + '_' + dt + ext):
+        filename = baseName + '_v' + str(counter)
+        counter += 1
+
+    filename += '_' + dt + ext
+    os.chdir(path)
+    pickle.dump(objectToSave, open(filename, 'wb'))
+    os.chdir(path)
+
+def get_dir_size(path='.'):
+    total = 0
+    with os.scandir(path) as it:
+        for entry in it:
+            if entry.is_file():
+                total += entry.stat().st_size
+            elif entry.is_dir():
+                total += get_dir_size(entry.path)
+    return total
+
+def oneToOneVisualizationPlotAllData(
+    case, qw_test_predict,p_test_predict, qw_test_truth, p_test_truth, M_inf_test, method
+    ):
+
+    plt.rcParams["figure.figsize"] = (15,5)
+    fig, axs = plt.subplots(1, 2)
+    fig.tight_layout(pad=0.4, w_pad=1.5, h_pad=.5)
+    fig.patch.set_facecolor('white')
+
+    dt = time.strftime("%Y%m%d-%H%M%S")
+    figName = 'colorMap' + '_' + method + '_' + dt
+
+    elbowLocation = 2.35
+    case = case
+    cm = plt.cm.get_cmap('cool')
+    zmax = 2.5
+    z = np.arange(0,zmax, zmax/qw_test_predict[case,:].shape[0])
+    #plot one case only
+    labelstr = 'Mach inf: ' + str(M_inf_test[case]) + ',case:' + str(case)
+    maxHeatTransfer = qw_test_predict[case,:].max()
+    maxPressure = p_test_predict[case,:].max()
+    x = qw_test_predict[case,:]/maxHeatTransfer
+    y = qw_test_truth[case,:]/maxHeatTransfer
+    sc = axs[0].scatter(x, y ,c = z, s=80, label = labelstr, 
+                     cmap=cm,edgecolors='none',vmin=0,vmax=2.5 )
+    cbar = fig.colorbar(sc,ax = axs[0])
+    cbar.ax.set_title("x-location (meters)")
+    cbar.ax.plot([0, zmax], [elbowLocation]*2, 'w')
+    axs[0].plot([0, 1], [0, 1], color = 'k')
+
+    caseNRMSE = str(round(100*normalizedRootMeanSquaredError(qw_test_truth[case,:],qw_test_predict[case,:]),4))
+    caseR2 =  str(round(r2_score(qw_test_truth[case,:], qw_test_predict[case,:]),4))
+    plotTextBox = 'R2: ' + caseR2 + '\n' + 'NRMSE: ' + caseNRMSE + '%'
+
+    props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+    axs[0].text(0.05, 0.85, plotTextBox, transform=axs[0].transAxes, fontsize=14, verticalalignment='top', bbox=props)
+    axs[0].set_title("Heat Transfer Predicitions vs Actual")
+    axs[0].grid()
+    axs[0].set_ylabel("True Value")
+    axs[0].set_xlabel("Predicted Heat Transfer")
+
+    #############################################
+
+    axs1label = method + ' Prediction'
+    sliceVal = 20 # this is the "ol' fashioned way" for the plt.plot argument "markevery=sliceVal." The command doesn't work in plt.scatter
+
+    # plt.plot(theta_rbf, Tw_rbf, color='black', linestyle='solid', linewidth=2, marker='D', markersize=6,     mfc='white', markevery=5, label='RBF')
+    axs[1].plot(x_cc_sorted[0,idxWindowStart:], qw_test_truth[case,:]/maxHeatTransfer, color='firebrick', 
+                linestyle='solid', linewidth=4, label='Truth Data')
+
+    axs[1].plot(x_cc_sorted[0,idxWindowStart:], qw_test_predict[case,:]/maxHeatTransfer, 
+                color='black', linestyle='-.', linewidth=2, label=axs1label)
+    axs[1].set_title("Predicted Heat Transfer",fontsize='x-large')
+    axs[1].set_ylabel("qw / qw_max", fontsize='x-large')
+    axs[1].set_xlabel('x (meters)')
+
+    axs[1].legend(fontsize='x-large')
+    os.chdir(figureDir)
+    plt.savefig(figName)
+    os.chdir(path)
+
+    # reductionFactor = 15
+# numPointsToKeep = int(qw_LF.shape[1]/reductionFactor)
+# endPoint = qw_LF.shape[1]-1
+# #find the indices for max qw 
+# qw_LF_argmax = np.argmax(qw_LF, axis=1)
+# #remove the zeros (those will always be included due to the construction of the list comprehension below)
+# #round the mean up so we get an integer (necessary for indexing... you can't index with a float)
+# peakHeatTransferLocation = math.ceil(np.mean(qw_LF_argmax[qw_LF_argmax != 0]))
+# #list comprehension to create the indices we'll use 
+# indices = [i*reductionFactor for i in np.arange(numPointsToKeep) ]
+# #adds the endpoint if it's not in there 
+# if endPoint not in indices:
+#     indices.append(endPoint)
+# #adds the peak heat transfer location if it's not in there 
+# if peakHeatTransferLocation not in indices:
+#     indices.append(peakHeatTransferLocation)
+# #sort the indices. I don't think it's strictly necessary, but better be safe than sorry. 
+# indices.sort()
+
+# downsampledHeatFlux = np.take(qw_LF_krigPredicted, indices, axis=1)
+# x_downsampledHeatFlux = np.take(x_cc_windowed, indices, axis=1)
+# print('Low fidelity heat flux compression: ', qw_LF.shape[1], ' to --> ', downsampledHeatFlux.shape[1])
+# numLFcases = qw_LF.shape[0]
+# caseWePick = random.randint(0,numLFcases)
+# maxscaledqw = downsampledHeatFlux.max()
+# maxqw = qw_LF.max()
+# invTransformedqw = qw_LF_OutputScaler.inverse_transform(downsampledHeatFlux)
+
+if visualizeDownsample:
+
+    #Pressure will be downsampled to two points. Pressure on the cone and pressure on the flare. These values will need to be chosen by the engineer using this code--they won't generalize 
+
+    ####################################
+    ####### Pressure Downsample ########
+    #################################### 
+    xLocationPressureValue1 = (np.abs(x_cc_windowed[0,:] - 2.0)).argmin()
+    xLocationPressureValue2 = (np.abs(x_cc_windowed[0,:] - 2.49)).argmin()
+
+    indices = [xLocationPressureValue1, xLocationPressureValue2]
+    downsampledPressure = np.take(p_LF, indices, axis=1)
+    x_downsampledPressure = np.take(x_cc_windowed, indices, axis=1)
+
+    ####################################
+    ##### Heat Transfer Downsample #####
+    #################################### 
+    reductionFactor = 15
+    numPointsToKeep = int(qw_LF.shape[1]/reductionFactor)
+    endPoint = qw_LF.shape[1]-1
+    #find the indices for max qw 
+    qw_LF_argmax = np.argmax(qw_LF, axis=1)
+    #remove the zeros (those will always be included due to the construction of the list comprehension below)
+    #round the mean up so we get an integer (necessary for indexing... you can't index with a float)
+    peakHeatTransferLocation = math.ceil(np.mean(qw_LF_argmax[qw_LF_argmax != 0]))
+    #list comprehension to create the indices we'll use 
+    indices = [i*reductionFactor for i in np.arange(numPointsToKeep) ]
+    #adds the endpoint if it's not in there 
+    if endPoint not in indices:
+        indices.append(endPoint)
+    #adds the peak heat transfer location if it's not in there 
+    if peakHeatTransferLocation not in indices:
+        indices.append(peakHeatTransferLocation)
+    #sort the indices. I don't think it's strictly necessary, but better be safe than sorry. 
+    indices.sort()
+
+    downsampledHeatFlux = np.take(qw_LF, indices, axis=1)
+    x_downsampledHeatFlux = np.take(x_cc_windowed, indices, axis=1)
+
+    caseWePick = 23
+    numLFcases = qw_LF.shape[0]
+    caseWePick = random.randint(0,numLFcases)
+    maxqw = qw_LF[caseWePick,:].max()
+    maxp = p_LF[caseWePick,:].max()
+    plt.plot(x_cc_windowed[0,:],qw_LF[caseWePick,:]/maxqw,label = 'Low Fidelity Heat Transfer', c='firebrick')
+    # plt.semilogy(x_cc_windowed[0,:],qw[caseWePick,:], label = 'Truth (RANS) Heat Transfer')
+    plt.scatter(x_downsampledHeatFlux[0,:],downsampledHeatFlux[caseWePick,:]/maxqw, label = 'Downsampled Low Fidelity Heat Transfer', s= 10, marker = "v", c='k', zorder=3 )
+    plt.grid()
+    plt.xlabel('Location Along Double Cone Wall, $x$ (meters)')
+    plt.ylabel('Normalized Heat Transfer Rate ($q_w/q_{w,max}$)')
+    plt.legend()
+
+    plt.figure()
+    plt.plot(x_cc_windowed[0,:],p_LF[caseWePick,:]/maxp,label = 'Low Fidelity Pressure')
+    # plt.semilogy(x_cc_windowed[0,:],p[caseWePick,:], label = 'Truth (RANS) Pressure')
+    plt.scatter(x_downsampledPressure[0,:],downsampledPressure[caseWePick,:]/maxp, label = 'Downsampled Low Fidelity Pressure', s= 20, marker = "v", c='k', zorder=3 )
+    plt.grid()
+    plt.xlabel('Location Along Double Cone Wall, $x$ (meters)')
+    plt.ylabel('Normalized Pressure ($P/P_{max}$)')
+    plt.legend()
+
+    ################ DOWNSAMPLE PLOTTING 
+
+
+    ################ Loading convergence study models and things 
+
+    pklName = glob.glob('*.pkl')
+if len(pklName) > 1:
+    raise Exception('ERROR: More than one .pkl file. Remove extra .pkl or load manually')
+pklName = pklName[0]
+modelDirKeywords = layerConfiguration + fidelityLevel + "*"
+modelDirName = glob.glob(modelDirKeywords)
+if len(modelDirName) > 1:
+    raise Exception('ERROR: More than one directory with ' + str(layerConfiguration) + 'configuration. Remove extra directory or load manually')
+modelDirName = modelDirName[0]
+MFconvStudyDict['[80, 80]'].keys()
+loadFolderPath = os.path.normpath('C:\\Users\\tyler\\Desktop\\oscDataPackage\\models\\NN\\NN_convergence\\MF20220707-195106\\iter8_80_80MF_convStudyModel')
+MF_NN = keras.models.load_model(loadFolderPath)
+MF_NN_epochs = MFconvStudyDict['[80, 80]']['epochs']
+MF_NN_history = MFconvStudyDict['[80, 80]']['history']
+
+
+[qw_LF_krig_test_predict, p_LF_krig_test_predict] = np.hsplit(y_LF_test_predict,2)
+qw_LF_left = [np.tile(entry, qw_LF[0,:xSpotLeft].shape[0]) for entry in qw_LF_krig_test_predict[:,0] ]
+qw_LF_right = [np.tile(entry, qw_LF[0,xSpotLeft:].shape[0]) for entry in qw_LF_krig_test_predict[:,1] ]
+print(np.shape(qw_LF_left))
+print(np.shape(qw_LF_right))
+qw_LF_stacked = np.hstack((qw_LF_left,qw_LF_right))
+qw_LF_stacked.shape
+
+# qwCase17Left = np.tile(leftMean[0][0], qw_LF[0,:xSpotLeft].shape[0])
+# qwCase17Right = np.tile(rightMean[0][0], qw_LF[0,xSpotLeft:].shape[0])
+# print(qwCase17Left.shape, qwCase17Right.shape)
+
+# qwCase17MeanedUp = np.concatenate((qwCase17Left,qwCase17Right))
+# qwCase17MeanedUp.shape
+
+fidelityLevel = 'LF'
+method = 'krig'
+modelName = fidelityLevel + '_' + method
+
+dataSplitNames = [
+    '_' + modelName + '_test_predict',
+    '_' + modelName + '_train_predict',
+    '_' + fidelityLevel + '_test_truth',
+    '_' + fidelityLevel + '_train_truth'
+    ]
+print(dataSplitNames)
+numDataSplit = int(len(dataSplitNames)/2)
+
+globals()[dataSplitNames[0][1:]] = globals()[modelName].predict(X_test)
+print(dataSplitNames[0][1:], "=", modelName, "predict(X_test)")
+globals()[dataSplitNames[1][1:]] = globals()[modelName].predict(X_train)
+print(dataSplitNames[1][1:], "=", modelName, "predict(X_train)")
+
+globals()[dataSplitNames[2][1:]] = y_lf_test
+globals()[dataSplitNames[3][1:]] = y_lf_train
+print(dataSplitNames[2][1:], "=y_lf_test" )
+print(dataSplitNames[3][1:], "=y_lf_train" )
+print("#"*30)
+variableNameList =[] #to be used for the "un-truncating"
+
+for i in np.arange(len(outputVarNames)):
+        for j in np.arange(numDataSplit):
+            #Input Data Split
+            globals()[outputVarNames[j] + dataSplitNames[i]] = np.hsplit(globals()[dataSplitNames[i][1:]],numDataSplit)[j]
+            print(outputVarNames[j], dataSplitNames[i], "=np.hsplit(", dataSplitNames[i][1:], "," ,numDataSplit,")","[", j, "]")
+            variableNameList.append(outputVarNames[j] + dataSplitNames[i])
+            print('variableNameList.append(',outputVarNames[j] + dataSplitNames[i] ,')')  
+
+            globals()[outputVarNames[j] + dataSplitNames[i+2]] = np.hsplit(globals()[dataSplitNames[i+2][1:]],numDataSplit)[j]
+            print(outputVarNames[j], dataSplitNames[i+2], "=np.hsplit(", dataSplitNames[i+2][1:], "," ,numDataSplit,")","[", j, "]")
+            variableNameList.append(outputVarNames[j] + dataSplitNames[i+2]) 
+            print('variableNameList.append(',outputVarNames[j] + dataSplitNames[i+2] ,')')  
+print(variableNameList)
+
+leftFluidScalarDistributionLength = globals()[LFoutputVarNames[0]][0,:xSpotLeft].shape[0]
+rightFluidScalarDistributionLength =  globals()[LFoutputVarNames[0]][0,xSpotLeft:].shape[0]
+
+print("leftFluidScalarDistributionLength:", leftFluidScalarDistributionLength)
+print("rightFluidScalarDistributionLength:", rightFluidScalarDistributionLength)
+
+for var in variableNameList:
+    temp_left = [np.tile(entry, leftFluidScalarDistributionLength) for entry in globals()[var][:,0] ]
+    temp_right = [np.tile(entry,rightFluidScalarDistributionLength) for entry in globals()[var][:,1] ]
+    # print("temp_left.shape:", np.shape(temp_left))
+    # print("temp_right.shape:",np.shape(temp_right))
+    temp_stacked = np.hstack((temp_left,temp_right))
+    # print("temp_stacked.shape:",np.shape(temp_stacked))
+    globals()[var] = temp_stacked
+    print(var, " shape: ", globals()[var].shape)
+
+
+LFinputTrainingData = []
+LFinputTrainingNames = []
+
+if verbose:
+    print('Input Data (stored in list inputTrainingData):\n')
+for i, name in enumerate(LFinputVarNames):
+    ScalerName = name + '_InputScaler'
+    ScaledName = name + '_Scaled'
+    locals()[ScalerName] = None
+    locals()[ScalerName] = preprocessing.StandardScaler()
+    locals()[ScaledName] = locals()[ScalerName].fit_transform(globals()[name])
+    LFinputTrainingData.append(locals()[ScaledName])
+    LFinputTrainingNames.append(ScaledName)
+    max_element = str(round(np.max(locals()[ScaledName]),2))
+    min_element = str(round(np.min(locals()[ScaledName]),2))
+    if verbose:
+        print(name + ' has been scaled! It is called ' + ScaledName + '. Min:' + min_element + '. Max:' + max_element)
+
+LFoutputTrainingData = []
+LFoutputTrainingNames = []
+
+if verbose:
+    print('\nOutput Data (stored in list LFoutputTrainingData):\n')
+for i, name in enumerate(LFoutputVarNames):
+    ScalerName = name + '_OutputScaler'
+    ScaledName = name + '_Scaled'
+    OutputDataName = name
+    locals()[ScalerName] = None
+    locals()[ScalerName] = preprocessing.StandardScaler()
+    locals()[ScaledName] = locals()[ScalerName].fit_transform(globals()[OutputDataName])
+    LFoutputTrainingData.append(locals()[ScaledName])
+    LFoutputTrainingNames.append(ScaledName)
+    max_element = str(round(np.max(locals()[ScaledName]),2))
+    min_element = str(round(np.min(locals()[ScaledName]),2))
+    if verbose:
+        print(name + ' has been scaled! It is called ' + ScaledName + '. Min:' + min_element + '. Max:' + max_element)
+if verbose:
+    print(str(np.shape(LFinputTrainingData)))
+    print(str(np.shape(LFoutputTrainingData)))
+    print(LFinputTrainingNames)
+    print(LFoutputVarNames)
+    print(LFoutputTrainingNames)
+
+if downsampleLF: 
+    ##################################################
+    ####### Heat Flux and Pressure Downsample ########
+    ################################################## 
+    conePoint = 2.0
+    flarePoint = 2.49
+    xLocationPressureValue1 = (np.abs(x_cc_windowed[0,:] - conePoint)).argmin()
+    xLocationPressureValue2 = (np.abs(x_cc_windowed[0,:] - flarePoint)).argmin()
+
+    indices = [xLocationPressureValue1, xLocationPressureValue2]
+    LFoutputTrainingData = []
+    for name in LFoutputTrainingNames:
+        globals()[name] = np.take(globals()[name], indices, axis=1)
+        LFoutputTrainingData.append(globals()[name])
+        if verbose:
+            print(name, ' truncated. Added to LFoutputTrainingData')
+    x_downsampledPressure = np.take(x_cc_windowed, indices, axis=1)
+if verbose:
+    print(str(np.shape(LFinputTrainingData)))
+    print(str(np.shape(LFoutputTrainingData)))
+    print(LFinputTrainingNames)
+    print(LFoutputVarNames)
+    print(LFoutputTrainingNames)
+
+##### SKLEARN DATA SPLIT 
+
+X = np.hstack(LFinputTrainingData)
+y_lf = np.hstack(LFoutputTrainingData)
+Y_lf_names = np.hstack(LFoutputTrainingNames)
+X_names = np.hstack(LFinputTrainingNames)
+originalIdx = np.arange(0,X.shape[0])
+
+print("X.shape: ", X.shape)
+print("y_lf.shape: ", y_lf.shape)
+print("M_inf.shape: ", M_inf.shape)
+print("originalIdx.shape: ", originalIdx.shape)
+
+
+X_train, X_test, y_lf_train, y_lf_test, M_inf_train, M_inf_test, trainIdx, testIdx = train_test_split(
+    X, y_lf, M_inf, originalIdx, test_size=0.20, random_state=random_state)
+
+X_test, X_val, y_lf_test, y_lf_val, M_inf_test, M_inf_val, testIdx, valIdx = train_test_split(
+    X_test, y_lf_test, M_inf_test, testIdx, test_size=0.50, random_state=random_state)
+
+if verbose:
+    print("Low fidelity X_train shape: {}".format(X_train.shape))
+    print("Low fidelity X_test shape: {}".format(X_test.shape))
+    print("Low fidelity X_val shape: {}".format(X_val.shape))
+    print("Low fidelity y_lf_train shape: {}".format(y_lf_train.shape))
+    print("Low fidelity y_lf_test shape: {}".format(y_lf_test.shape))
+    print("Low fidelity y_lf_val shape: {}".format(y_lf_val.shape))
+    print(f"concatenation order: {X_names}")
+    print(f"concatenation order: {Y_lf_names}")
+
+verbose= True
+## Input Conditions, low fidelity data generation
+
+# These probably should be renamed to be consistent with the input variables already created. 
+
+
+# inputVar list contains:  ['WallTemp', 'Density', 'Temperature', 'Velocity']
+
+gamma = 1.4 # perfect gas
+R_specific = 287.058
+cp1 = 1.005 #KJ/Kg*K, air at 251K
+
+LFinputVarNames = [
+    'T_w',
+    'rho_inf',
+    'T_inf',
+    'u_inf'
+]
+
+for i, inputVarName in enumerate(LFinputVarNames): 
+    globals()[inputVarName] = lowFidelityInputPoints[:,i].reshape(-1,1)
+    print(i, ' Big ', inputVarName, 'created , shape ', str(globals()[inputVarName].shape))
+    if verbose:
+        print(globals()[inputVarName].max(), globals()[inputVarName].min())
+
+numCases = lowFidelityInputPoints.shape[0]
+if verbose:
+    print('Num cases: ', str(numCases))
+
+a_inf = np.sqrt(gamma*R_specific*T_inf)
+M_inf = u_inf/a_inf
+P_inf = rho_inf*R_specific*T_inf
+mu_inf = mu_suth(T_inf)
+
+theta  = np.full((numCases,1),np.deg2rad(7))
+
+inputDataObliqueShock = M_inf,u_inf,T_inf,P_inf,rho_inf,a_inf,theta
+
+[*temp] = map(perfgas_oblique, M_inf,u_inf,T_inf,P_inf,rho_inf,a_inf,theta)
+obliqueShockResults = np.array(temp)
+
+
+outputLocalMethodVarName = [
+    'H2', 
+    'V2', 
+    'T2', 
+    'P2', 
+    'rho2',
+    'beta',
+    'M2',
+    'a2', 
+    'T01', 
+    'T02',
+    'P01',
+    'P02'
+]
+
+for i, name in enumerate(outputLocalMethodVarName):
+    locals()[name] = obliqueShockResults[:,i]
+## ---- Pressure Coefficient ----
+
+# Shock Expansion for 7deg Section
+
+shockAngle = beta
+
+cp_ShockExpansionTheory = (4/(gamma+1))*(np.sin(shockAngle)**2 - (1/(M_inf**2)))
+cp_newtonian_coneAngle = 2*(np.sin(theta)**2)
+
+xPressureWindowStart = 0.5
+xPressureWindowEnd = 2.0
+xPressureWindowMid = 0.5
+
+xSpotBegin = (np.abs(x_cc_windowed[0,:] - xPressureWindowStart)).argmin()
+xSpotEnd = (np.abs(x_cc_windowed[0,:] - xPressureWindowEnd)).argmin()
+xSpotNoMean = (np.abs(x_cc_windowed[0,:] - xPressureWindowMid)).argmin()
+
+# PressureForCPActual = p[:,xSpotNoMean].reshape(-1,1)
+# cp_actual = (PressureForCPActual - P_inf)/ (0.5*rho_inf*(u_inf**2))
+# cp_actual[389] = None # takes care of that one bad point
+
+#Shock Expansion For 40deg Section
+
+T_inf2 = T2
+# T_w = T_w
+rho_inf2 = rho2
+u_inf2 = M2*a2
+a_inf2 = a2
+M_inf2 = M2
+P_inf2 = P2
+mu_inf2 = mu_suth(T2)
+theta2  = np.full((numCases,1),np.deg2rad(33))
+
+[*temp] = map(perfgas_oblique, M_inf2,u_inf2,T_inf2,P_inf2,rho_inf2,a_inf2,theta2)
+obliqueShockResults = np.array(temp)
+
+outputLocalMethodVarName = [
+    'H3', 
+    'V3', 
+    'T3', 
+    'P3', 
+    'rho3',
+    'beta2',
+    'M3',
+    'a3', 
+    'T02', 
+    'T03',
+    'P02',
+    'P03'
+]
+
+for i, name in enumerate(outputLocalMethodVarName):
+    locals()[name] = obliqueShockResults[:,i]
+xPressureWindowLeft = 2.353056 # elbow location
+xPressureWindowRight = 2.5039961 # end of cone
+
+xPressureWindowMid = 2.4
+xSpotLeft = (np.abs(x_cc_windowed[0,:] - xPressureWindowLeft)).argmin()
+xSpotRight = (np.abs(x_cc_windowed[0,:] - xPressureWindowRight)).argmin()
+
+# meanPressure40DegConeSection = np.median(p[:,xSpotLeft:xSpotRight], axis = 1).reshape(-1,1)
+# cp_actual2 = (meanPressure40DegConeSection - P_inf2)/ (0.5*rho_inf2*(u_inf2**2))
+# cp_actual2[389] = None # takes care of that one bad case
+
+cp_newtonian_coneAngle2 = 2*(np.sin(theta2)**2)
+shockAngle2 = beta2
+cp_ShockExpansionTheory2 = (4/(gamma+1))*(np.sin(shockAngle2)**2 - (1/(M_inf2**2)))
+
+p_SE_7deg = cp_ShockExpansionTheory*(0.5*rho_inf*(u_inf**2)) + P_inf
+p_Newtonian_40deg = cp_newtonian_coneAngle2*(0.5*rho_inf2*(u_inf2**2)) + P_inf2
+p_SE_40deg = cp_ShockExpansionTheory2*(0.5*rho_inf2*(u_inf2**2)) + P_inf2
+
+xSpotElbow = (np.abs(x_cc_windowed[0,:] - xPressureWindowLeft)).argmin()
+
+p_lf_7deg = np.tile(p_SE_7deg, xSpotElbow+1)
+p_lf_40deg_newt = np.tile(p_Newtonian_40deg, xSpotRight - xSpotLeft)
+p_lf_40deg = np.tile(p_SE_40deg, xSpotRight - xSpotLeft)
+p_lowFidelity_SE = np.concatenate((p_lf_7deg, p_lf_40deg), axis=1)
+p_lowFidelity_Newt = np.concatenate((p_lf_7deg, p_lf_40deg_newt), axis=1)
+
+p_lowFidelity_SE_truncated = np.concatenate((p_SE_7deg, p_SE_40deg), axis=1)
+p_lowFidelity_SE_truncated = p_lowFidelity_SE_truncated.T
+
+# normalizedHFPressure = p/P03
+# normalizedLFPressure = p_lowFidelity_SE/P03
+# normalizedLFPressureNewt = p_lowFidelity_Newt/P03
+
+p_LF = p_lowFidelity_SE
+
+## ---- Eckert's Reference Temperature, Cone Example ----
+
+Pr = 0.72
+recovFactor = np.sqrt(Pr)
+xSpotEndArtificial = x_cc_windowed[0,:].shape[0] - xSpotElbow
+
+x_FrontCone = x_cc_windowed[0,:xSpotElbow]
+x_RearCone = x_cc_windowed[0,:xSpotEndArtificial] - 0.25
+
+T_star = 0.5*(T2 + T_w) + .22*recovFactor*(T02 - T2)
+rho_star = P2/ (R_specific*T_star)
+mu_star = mu_suth(T2)
+u2 = M2 * a2
+Re_coeff = rho_star*u2/mu_star
+Re_x = Re_coeff * x_FrontCone
+cone_factor = np.sqrt(3)
+cH_coeff = (cone_factor*0.332)/((Pr**(2/3))*(Re_coeff**(.5)))
+cH_star = cH_coeff / x_FrontCone**(1/2)
+T_r = T2 + recovFactor*(T02 - T2)
+q_dot_FrontCone = rho_star*u2*cp1*1000*(T_r - T_w)*cH_star
+
+T_star2 = 0.5*(T3 + T_w) + .22*recovFactor*(T03 - T3)
+rho_star2 = P3/ (R_specific*T_star2)
+mu_star2 = mu_suth(T3)
+u3 = M3* a3
+Re_coeff2 = rho_star2*u2/mu_star2
+Re_x2 = Re_coeff2 * x_RearCone
+cH_coeff2 = (cone_factor*0.332)/((Pr**(2/3))*(Re_coeff2**(.5)))
+cH_star2 = cH_coeff2 / x_RearCone**(1/2)
+T_r2 = T3 + recovFactor*(T03 - T3)
+q_dot_RearCone = rho_star2*u3*cp1*1000*(T_r2 - T_w)*cH_star2
+
+qw_LF = np.concatenate((q_dot_FrontCone, q_dot_RearCone), axis=1)
+
+
+LFoutputVarNames = ['qw_LF','p_LF'] 
+
+totalParamsTrainData = 0
+for var in LFoutputVarNames:
+    totalParamsTrainData += globals()[var].shape[0] * globals()[var].shape[1]
+if verbose:
+    print('Total number of parameters in training data: ', totalParamsTrainData)
+
+if outlierRemoval and (globals()[LFoutputVarNames[0]].shape[0] == numCases):
+    print('Entered outlier removal loop')
+    casesToRemove = np.argwhere(np.isnan(qw_LF).any(axis=1))
+    if numpPointsMultiplier == 2:
+        casesToRemove = [648]
+    
+    for i, outputVarName in enumerate(LFoutputVarNames): 
+        globals()[outputVarName] = np.delete(locals()[outputVarName], casesToRemove, axis=0)
+        if verbose:
+            print('Removed ', len(casesToRemove), ' cases.')
+            print(outputVarName, 'new shape ', str(globals()[outputVarName].shape))
+
+    for i, inputVarName in enumerate(LFinputVarNames): 
+        globals()[inputVarName] = np.delete(locals()[inputVarName], casesToRemove, axis=0)
+        if verbose:
+            print('Removed ', len(casesToRemove), ' cases.')
+            print(inputVarName, 'new shape ', str(globals()[inputVarName].shape))
+
+    M_inf = np.delete(M_inf, casesToRemove, axis=0)
+    if verbose:
+        print('M_inf new shape ', str(M_inf.shape))
+
+                # [annotations[i]] = {
+                #     'originalKernel' : kernel,
+                #     'optimizedKernel' : optimizedKernel,
+                #     'average_nrmse' : average_nrmse,
+                #     'trainTime' : trainTime,
+                #     'modelSize' : modelSize,
+                #     'frequency' : frequencyTestAverage
+                #     }
+
+            # globals()[dictName][split]['frequencyList'] = frequencyList
+            # globals()[dictName][split]['nrmse_List'] = average_nrmse
+            # globals()[dictName][split]['modelSizeList'] = modelSizeList
+            # globals()[dictName][split]['trainTimeList'] = trainTimeList
+
+            globals()[dictName][split]['numParamsList'] = numParamsList
+            globals()[dictName][split]['minErrorList'] = minErrorList
+            globals()[dictName][split]['frequencyList'] = frequencyList
+            globals()[dictName][split]['trainTimeList'] = trainTimeList
+
+
+  modelName = 'krig'
+
+    dataSplitNames = [
+        '_' + modelName + '_test_predict',
+        '_' + modelName + '_train_predict',
+        '_' + fidelityLevel + '_test_truth',
+        '_' + fidelityLevel + '_train_truth'
+        ]
+    numDataSplit = int(len(dataSplitNames)/2) # are we splitting into train/test (numDataSplit = 2) or train/test/validation (numDataSplit =3) ? 
+
+    #######################################
+
+    globals()[dataSplitNames[0][1:]] = krig.predict(X_test)
+    globals()[dataSplitNames[1][1:]] = krig.predict(X_train)
+
+
+    globals()[dataSplitNames[2][1:]] = y_test
+    globals()[dataSplitNames[3][1:]] = y_train
+    #######################################
+
+    variableNameList =[] #to be used for the "un-truncating"
+
+    for i in np.arange(len(outputVarNames)):
+        for j in np.arange(numDataSplit):
+            #Input Data Split
+            globals()[outputVarNames[j] + dataSplitNames[i]] = np.hsplit(globals()[dataSplitNames[i][1:]],numDataSplit)[j]
+            variableNameList.append(outputVarNames[j] + dataSplitNames[i])
+
+            globals()[outputVarNames[j] + dataSplitNames[i+2]] = np.hsplit(globals()[dataSplitNames[i+2][1:]],numDataSplit)[j]
+            variableNameList.append(outputVarNames[j] + dataSplitNames[i+2])   
+        # print(variableNameList)
+    # not including truncation for now
+    # if truncate: 
+    #     leftFluidScalarDistributionLength = globals()[outputVarNames[0]][0,:xSpotLeft].shape[0]
+    #     rightFluidScalarDistributionLength =  globals()[outputVarNames[0]][0,xSpotLeft:].shape[0]
+    #     if verbose:
+    #         print("leftFluidScalarDistributionLength:", leftFluidScalarDistributionLength)
+    #         print("rightFluidScalarDistributionLength:", rightFluidScalarDistributionLength)
+
+    #     for var in variableNameList:
+    #         temp_left = [np.tile(entry, leftFluidScalarDistributionLength) for entry in globals()[var][:,0] ]
+    #         temp_right = [np.tile(entry,rightFluidScalarDistributionLength) for entry in globals()[var][:,1] ]
+    #         temp_stacked = np.hstack((temp_left,temp_right))
+    #         globals()[var] = temp_stacked
+    #         if verbose:
+    #             print(var, " shape: ", globals()[var].shape)
+########### Inverse Scale ###########
+
+    if fidelityLevel == 'LF':
+
+        for name in LFoutputVarNames:
+            ScalerName = name + '_OutputScaler'
+            for tail in dataSplitNames:
+                fullName = name[0:-3] + tail
+                globals()[fullName] = globals()[ScalerName].inverse_transform(globals()[fullName])
+                if verbose:
+                    print(fullName + ' = ' + ScalerName + '.inverse_transform(' +  fullName + ')')
+                
+    else:
+        
+        for name in outputVarNames:
+            ScalerName = name + '_OutputScaler'
+            for tail in dataSplitNames:
+                fullName = name + tail
+                globals()[fullName] = globals()[ScalerName].inverse_transform(globals()[fullName])
+                if verbose:
+                    print( fullName + ' has been inverse transformed using ' + ScalerName + '! It is called ' + fullName)
+
+    chosenVar = 'p'
+    chosenSet = 'test'
+    matches = [match for match in variableNameList if (chosenSet in match) and (chosenVar+'_' in match)]
+
+    truth = globals()[matches[1]]
+    prediction = globals()[matches[0]]
+    rmse = mean_squared_error(truth, prediction, squared=False)
+    ybar = truth.max()-truth.min()
+    nrmse_pressure = round(rmse/ybar,5)
+
+
+    chosenVar = 'qw'
+    chosenSet = 'test'
+    matches = [match for match in variableNameList if (chosenSet in match) and (chosenVar+'_' in match)]
+
+    truth = globals()[matches[1]]
+    prediction = globals()[matches[0]]
+    rmse = mean_squared_error(truth, prediction, squared=False)
+    ybar = truth.max()-truth.min()
+    nrmse_heatflux = round(rmse/ybar,5)
+
+    average_nrmse = np.mean((nrmse_pressure, nrmse_heatflux))
+
+
+# top_n_modelChoices = [ 
+#         [56, 80],
+#         [64, 80, 80],
+#         [40, 56, 64]
+#         ] 
+
+# splitList = [
+#     0.80,
+#     0.70
+# ]
+
+# hyperparamDict = {
+#     "learningRate" : 1.0e-3,
+#     "regType" : keras.regularizers.L2,
+#     "regValue" : 1.0e-6,
+#     "hiddenLayerActivation" : tf.nn.tanh,
+#     "outputLayerActivation" : tf.nn.leaky_relu,
+#     "kernelInitializer" : tf.keras.initializers.GlorotUniform(),
+#     "optimizer" : tf.keras.optimizers.Adamax,
+#     "numEpochs" : 10,
+#     "myBatchSize" : 224,
+#     "loss" : 'mse'
+# }
+
+# callbacks_list = [
+#     keras.callbacks.EarlyStopping(
+#         monitor = "val_mean_squared_error",mode="min",
+#         patience=200, verbose=0,
+#         restore_best_weights=False 
+#         )
+#     ]
+
+# HF_NN_modelConvergenceDict = modelConvergenceStudy(
+#     fidelityLevel= 'HF', 
+#     modelType= 'NN',
+#     M_inf=M_inf,
+#     inputTrainingData=inputTrainingData,
+#     outputTrainingData=outputTrainingData,
+#     inputTrainingNames=inputTrainingNames,
+#     outputTrainingNames=outputTrainingNames,
+#     top_n_modelChoices=top_n_modelChoices,
+#     splitList=splitList,
+#     verbose=False,
+#     hyperparamDict=hyperparamDict,
+#     callbacks_list=callbacks_list,
+#     n_restarts=None
+#     )
+
+
+# top_n_modelChoices = [
+# 2.28**2 * RBF(length_scale=3.09) + WhiteKernel(noise_level=0.002),
+# 1.54**2 * Matern(length_scale=3.7, nu=2.5)
+# ]
+
+# splitList = [
+#     0.80,
+#     0.70
+# ]
+markerList = [
+    'o',
+    'v',
+    's',
+    "*",
+    'X',
+    'p',
+    '1',
+    '>',
+    'H',
+    '4',
+    'P'
+]
+nModels = len(top_n_modelChoices)
+numColors = len(splitList)
+colors = plt.cm.jet(np.linspace(0,1,numColors))
+cleanedKernelList = cleanKernelList(kernelList = HF_krig_convDict[0.8]['kernelList'])
+
+fidelityLevel = 'HF'
+plt.rcParams["figure.figsize"] = (8,5)
+figName = 'modelConvergence' + fidelityLevel + '_'
+dt = str(datetime.date.today())
+figName += dt
+fig, ax = plt.subplots(constrained_layout=True)
+
+for i, split in enumerate(splitList):
+    for j, modelChoice in enumerate(np.arange(0,nModels)):
+        xPlot = (HF_krig_convDict[split]['modelSizeList'][modelChoice])/(2**20)
+        yPlot = HF_krig_convDict[split]['nrmse_list'][modelChoice]
+        label = f'Split: {split}, Kernel: {cleanedKernelList[modelChoice]}'
+        ax.scatter(xPlot,yPlot, label = label, color = colors[i], marker=markerList[j])
+plt.legend()
+ax.set_xlabel('Model Size (Megabytes)')
+ax.set_ylabel('NRMSE')
+
+currentLocation = os.getcwd()
+os.chdir(path)
+outputPkl = [string + '.pkl' for string in outputVarNames]
+outputDataSize = 0
+for var in outputPkl:
+    outputDataSize += os.path.getsize(var)
+outputDataSize = outputDataSize/(2**20)
+print(outputDataSize)
+os.chdir(currentLocation)
+
+def num2percentage(x):
+    return (x / outputDataSize)*100
+
+def percentage2num(x):
+    return (x * outputDataSize)/100
+
+secax = ax.secondary_xaxis('top', functions=(num2percentage, percentage2num))
+secax.set_xlabel('Percentage of Original Training Data $(\%)$')
+
+userDict = HF_krig_convDict
+xList = []
+yList = []
+for j, modelChoice in enumerate(np.arange(0,nModels)):
+    for split in splitList:
+        xList.append((userDict[split]['modelSizeList'][j])/(2**20))
+        yList.append((userDict[split]['nrmse_list'][j]))
+
+iterator = int(len(xList)/nModels)
+# print(iterator)
+
+start = 0
+end = iterator
+for split in np.arange(0,nModels):
+    ax.plot(xList[start:end],yList[start:end], linestyle='-.',c='k', linewidth=0.5,zorder=0)
+    start += iterator
+    end += iterator
+
+splitList = [
+    0.80,
+    0.70
+]
+
+userDict = HF_krig_convDict
+xList = []
+yList = []
+for j, modelChoice in enumerate(np.arange(0,nModels)):
+    for split in splitList:
+        xList.append(userDict[split]['modelSizeList'][j])
+        yList.append(userDict[split]['nrmse_List'][j])
+
+iterator = int(len(xList)/nModels)
+print(iterator)
+
+start = 0
+end = iterator
+for split in np.arange(0,nModels):
+    plt.plot(xList[start:end],yList[start:end], linestyle='-.',c='k', linewidth=0.5)
+    start += iterator
+    end += iterator
+
+
+    # for i, split in enumerate(splitList):
+    #     for j, modelChoice in enumerate(np.arange(0,nModels)):
+    #         xPlot = (convDict[split]['modelSizeList'][modelChoice])/(2**20)
+    #         yPlot = convDict[split][yAxis][modelChoice]
+    #         label = f'Split: {split}, Model: {modelArchitectureList[modelChoice]}'
+    #         ax.scatter(xPlot,yPlot, label = label, color = colors[i], marker=markerList[j])
+    # # plt.legend()
+    # ax.set_xlabel('Model Size (Megabytes)')
+    # ax.set_ylabel(errorMetric)
+
+    # currentLocation = os.getcwd()
+    # os.chdir(path)
+    # outputPkl = [string + '.pkl' for string in outputVarNames]
+    # outputDataSize = 0
+    # for var in outputPkl:
+    #     outputDataSize += os.path.getsize(var)
+    # outputDataSize = outputDataSize/(2**20)
+    # os.chdir(currentLocation)
+
+    # def num2percentage(x):
+    #     return (x / outputDataSize)*100
+
+    # def percentage2num(x):
+    #     return (x * outputDataSize)/100
+
+    # secax = ax.secondary_xaxis('top', functions=(num2percentage, percentage2num))
+    # secax.set_xlabel('Percentage of Original Training Data $(\%)$')
+
+def plotModelConvergenceStudy(top_n_modelChoices,splitList,convDict, fidelityLevel, modelChoice, errorMetric):
+    markerList = [
+        'o',
+        'v',
+        's',
+        "*",
+        'X',
+        'p',
+        '1',
+        '>',
+        'H',
+        '4',
+        'P'
+    ]
+
+    inputDict = {
+        'R2' : 'R2_list',
+        'NRMSE' : 'nrmse_list' 
+    }
+    yAxis = inputDict[errorMetric]
+    nModels = len(top_n_modelChoices)
+    numColors = len(splitList)
+    colors = plt.cm.jet(np.linspace(0,1,numColors))
+    if modelChoice == 'krig':
+        modelArchitectureList = cleanKernelList(kernelList = convDict['top_n_modelChoices'])
+    if modelChoice == 'NN':
+        modelArchitectureList = [str(item) for item in convDict['top_n_modelChoices']]
+
+    plt.rcParams["figure.figsize"] = (8,5)
+    figName = f'modelConvergence_{fidelityLevel}_{modelChoice}_'
+    dt = str(datetime.date.today())
+    figName += dt
+    fig, ax = plt.subplots(constrained_layout=True)
+
+    for i, split in enumerate(splitList):
+        for j, modelChoice in enumerate(np.arange(0,nModels)):
+            xPlot = (convDict[split]['modelSizeList'][modelChoice])/(2**20)
+            yPlot = convDict[split][yAxis][modelChoice]
+            label = f'Split: {split}, Model: {modelArchitectureList[modelChoice]}'
+            ax.scatter(xPlot,yPlot, label = label, color = colors[i], marker=markerList[j])
+    # plt.legend()
+    ax.set_xlabel('Model Size (Megabytes)')
+    ax.set_ylabel(errorMetric)
+
+    currentLocation = os.getcwd()
+    os.chdir(path)
+    outputPkl = [string + '.pkl' for string in outputVarNames]
+    outputDataSize = 0
+    for var in outputPkl:
+        outputDataSize += os.path.getsize(var)
+    outputDataSize = outputDataSize/(2**20)
+    os.chdir(currentLocation)
+
+    def num2percentage(x):
+        return (x / outputDataSize)*100
+
+    def percentage2num(x):
+        return (x * outputDataSize)/100
+
+    secax = ax.secondary_xaxis('top', functions=(num2percentage, percentage2num))
+    secax.set_xlabel('Percentage of Original Training Data $(\%)$')
+
+    xList = []
+    yList = []
+    for j, modelChoice in enumerate(np.arange(0,nModels)):
+        for split in splitList:
+            xList.append((convDict[split]['modelSizeList'][j])/(2**20))
+            yList.append((convDict[split][yAxis][j]))
+
+    iterator = int(len(xList)/nModels)
+    # print(iterator)
+
+    start = 0
+    end = iterator
+    for split in np.arange(0,nModels):
+        ax.plot(xList[start:end],yList[start:end], linestyle='-.',c='k', linewidth=0.5,zorder=0)
+        start += iterator
+        end += iterator
+
+convDict = HF_NN_modelConvergenceDict
+nModels = len(top_n_modelChoices)
+errorMetric = 'R^2'
+errorMetric = 'NRMSE'
+inputDict = {
+    'R^2' : 'R2_list',
+    'NRMSE' : 'nrmse_list' 
+}
+yAxis = inputDict[errorMetric]
+numColors = nModels
+colors = plt.cm.jet(np.linspace(0,1,numColors))
+markerList = [
+    'o',
+    'v',
+    's',
+    "*",
+    'X',
+    'p',
+    '1',
+    '>',
+    'H',
+    '4',
+    'P'
+]
+modelChoice = 'NN'
+if modelChoice == 'krig':
+    modelArchitectureList = cleanKernelList(kernelList = convDict['top_n_modelChoices'])
+if modelChoice == 'NN':
+    modelArchitectureList = [str(item) for item in convDict['top_n_modelChoices']]
+
+xList = []
+yList = []
+labels = []
+for j, modelChoice in enumerate(np.arange(0,nModels)):
+    labels.append(f'Model: {modelArchitectureList[modelChoice]}')
+    for split in splitList:
+        xList.append(split*100)
+        yList.append((convDict[split][yAxis][j]))
+
+iterator = int(len(xList)/nModels)
+# print(iterator)
+fig, ax = plt.subplots(constrained_layout=True)
+start = 0
+end = iterator
+for i in np.arange(0,nModels):
+    ax.plot(xList[start:end],yList[start:end], linestyle='--',c=colors[i],marker=markerList[i], linewidth=0.75,zorder=0, label = labels[i])
+    start += iterator
+    end += iterator
+
+ax.set_xlabel('Training Data Split (%)')
+ax.set_ylabel(f'${errorMetric}$')
+ax.legend()
+
+convDict=HF_NN_modelConvergenceDict; fidelityLevel='HF';modelChoice='NN'
+errorMetric = 'single_medianPeakMissList'
+peakMissList = []
+
+for split in splitList:
+    peakMissList.append(convDict[split][errorMetric])
+
+peakMissArray = np.asarray(peakMissList)
+
+for i, var in enumerate(outputVarNames):
+    globals()[var+'_peakMiss'] = peakMissArray[:,:,i]
+nModels = len(top_n_modelChoices)
+numColors = nModels
+colors = plt.cm.jet(np.linspace(0,1,numColors))
+modelArchitectureList = [str(item) for item in convDict['top_n_modelChoices']]
+
+labels = []
+for j, modelChoice in enumerate(np.arange(0,nModels)):
+    labels.append(f'Model: {modelArchitectureList[modelChoice]}')
+
+xList = [split for split in splitList]
+for var in outputVarNames:
+    fig, ax = plt.subplots(constrained_layout=True)
+    yList = globals()[var+'_peakMiss']
+    for i in np.arange(0,nModels):
+        plt.plot(xList, yList[:,i], linestyle='--',c=colors[i],marker=markerList[i], linewidth=0.75,zorder=0, label = labels[i])
+    plt.legend()
+
+###################################################
+
+def modelConvergenceStudy(
+    fidelityLevel, modelType, M_inf, inputTrainingData, outputTrainingData, inputTrainingNames, outputTrainingNames, top_n_modelChoices, splitList, verbose, hyperparamDict=None, callbacks_list=None, n_restarts=None
+    ):
+
+    #Set variables
+    numIters = len(splitList)
+    modelName = fidelityLevel + "_" + modelType
+    dictName = modelName+"_modelConvergenceDict"
+
+    #Initialize data structures
+    completionTime = []
+    globals()[dictName]= dict()
+    
+    #Store list of model choices in dictionary
+    globals()[dictName]["top_n_modelChoices"] = top_n_modelChoices
+
+    #Create list of strings, top model choices. Used in dictionary
+    annotations = [str(item) for item in top_n_modelChoices]
+
+    # Name and create directories/paths
+    currentConvStudyTopDir = modelName + time.strftime("%Y%m%d-%H%M%S")
+    convStudyPath = os.path.join(path,modelConvStudyDir)
+    os.chdir(convStudyPath)
+    os.mkdir(currentConvStudyTopDir)
+    os.chdir(currentConvStudyTopDir)
+
+    ##### Store input and output data in X and y variables
+    if fidelityLevel != 'MF':
+        X = np.hstack(inputTrainingData)
+    if fidelityLevel == 'MF':
+        X = inputTrainingData
+    y = np.hstack(outputTrainingData)
+    Y_names = np.hstack(outputTrainingNames)
+    X_names = np.hstack(inputTrainingNames)
+    originalIdx = np.arange(0,X.shape[0])
+
+    for i, split in enumerate(splitList):
+        start = time.time()
+        test_size = round(1-split,2)
+        currentIter = i+1
+        print(f'Training on {round(split*100,1)} percent of original train data. Data split # {currentIter} of {len(splitList)} begin. ')
+
+        ###### Split Data
+        X_train, X_test, y_train, y_test, M_inf_train, M_inf_test, trainIdx, testIdx = train_test_split(
+            X, y, M_inf, originalIdx, test_size=test_size, random_state=random_state)
+
+        X_test, X_val, y_test, y_val, M_inf_test, M_inf_val, testIdx, valIdx = train_test_split(
+            X_test, y_test, M_inf_test, testIdx, test_size=0.50, random_state=random_state)
+        if verbose:
+            print("X_train shape: {}".format(X_train.shape))
+            print("X_test shape: {}".format(X_test.shape))
+            print("X_val shape: {}".format(X_val.shape))
+            print("y_train shape: {}".format(y_train.shape))
+            print("y_test shape: {}".format(y_test.shape))
+            print("y_val shape: {}".format(y_val.shape))
+            print(f"concatenation order: {X_names}")
+            print(f"concatenation order: {Y_names}")
+
+        ###### Build and Train Models ######
+
+        ## Neural Network ##
+        if modelType == "NN":
+            frequencyList = []
+            nrmse_list = []
+            trainTimeList = [] 
+            modelSizeList = []
+            single_nrmse_list = []
+            R2_list = []
+            single_R2_list = []
+            single_medianPeakMissList = []
+            single_meanPeakMissList = []
+
+            validData = (X_test, y_test)
+            for i, layerList in enumerate(top_n_modelChoices):
+                currentInternalIter = i+1
+                print(f'Model train iteration {currentIter}.{currentInternalIter} of {currentIter}.{len(top_n_modelChoices)} begin. Hidden layer architecture: {str(layerList)}. ')
+
+                trainTimeStart = time.time()
+                NN_epochs, NN_history, average_nrmse, single_nrmse, single_R2, average_R2,  single_medianPeakMiss, single_meanPeakMiss, modelSize, frequencyTestAverage = buildAndTrainNN(
+                    X_train=X_train,
+                    y_train=y_train,
+                    fidelityLevel = fidelityLevel,
+                    layerSizeList=layerList,
+                    hyperparamDict=hyperparamDict,
+                    validData=validData,
+                    callbacks_list = callbacks_list
+                    )
+                trainTimeEnd = time.time()
+                trainTime = round(trainTimeEnd-trainTimeStart,4)
+
+                frequencyList.append(frequencyTestAverage)
+                nrmse_list.append(average_nrmse)
+                trainTimeList.append(trainTime)
+                modelSizeList.append(modelSize)
+                single_nrmse_list.append(single_nrmse)
+                R2_list.append(average_R2)
+                single_R2_list.append(single_R2)
+                single_medianPeakMissList.append(single_medianPeakMiss)
+                single_meanPeakMissList.append(single_meanPeakMiss)
+
+                tempDict = {
+                    'epochs' : NN_epochs,
+                    'history' : NN_history,
+                    'average_nrmse' : average_nrmse,
+                    'single_nrmse' : single_nrmse,
+                    'trainTime' : trainTime,
+                    'modelSize' : modelSize,
+                    'frequency' : frequencyTestAverage,
+                    'single_R2': single_R2,
+                    'average_R2': average_R2,
+                    'single_medianPeakMiss' : single_medianPeakMiss,
+                    'single_meanPeakMiss' : single_meanPeakMiss
+                    }
+
+                globals()[dictName][split] = {
+                    annotations[i] : tempDict
+                }
+
+                print(f'Model train iteration {currentIter}.{currentInternalIter} of {currentIter}.{len(top_n_modelChoices)} complete. Epochs: {len(NN_epochs)} of {hyperparamDict["numEpochs"]} scheduled.') 
+            
+            globals()[dictName][split].update( {
+                'modelSizeList' : modelSizeList,
+                'nrmse_list' : nrmse_list,
+                'single_nrmse_list' : single_nrmse_list,
+                'R2_list': R2_list,
+                'single_R2_list': single_R2_list,
+                'frequencyList' : frequencyList,
+                'trainTimeList' : trainTimeList,
+                'single_medianPeakMissList' : single_medianPeakMissList,
+                'single_meanPeakMissList' : single_meanPeakMissList
+            }
+            )
+        
+        ## Kriging ##
+        if modelType =='krig':
+            kernelList = []
+            frequencyList = []
+            nrmse_list = []
+            single_nrmse_list = []
+            trainTimeList = [] 
+            modelSizeList = []
+            R2_list = []
+            single_R2_list = []
+            single_medianPeakMissList = []
+            single_meanPeakMissList = []
+
+            for i, kernel in enumerate(top_n_modelChoices):
+                currentInternalIter = i+1
+                print(f'Model train iteration {currentIter}.{currentInternalIter} of {currentIter}.{len(top_n_modelChoices)} begin. Kernel: {str(kernel)}. ')
+                optimizedKernel, frequencyTestAverage, average_nrmse, single_nrmse, single_R2, average_R2, single_medianPeakMiss, single_meanPeakMiss, trainTime, modelSize = buildAndTrainKrig(
+                    X_train=X_train,
+                    X_test=X_test,
+                    y_train=y_train,
+                    y_test=y_test,
+                    kernel=kernel,
+                    n_restarts=n_restarts,
+                    fidelityLevel=fidelityLevel
+                )
+                kernelList.append(optimizedKernel)
+                frequencyList.append(frequencyTestAverage)
+                nrmse_list.append(average_nrmse)
+                single_nrmse_list.append(single_nrmse)
+                trainTimeList.append(trainTime)
+                modelSizeList.append(modelSize)
+                R2_list.append(average_R2)
+                single_R2_list.append(single_R2)
+                single_medianPeakMissList.append(single_medianPeakMiss)
+                single_meanPeakMissList.append(single_meanPeakMiss)
+                
+
+                tempDict = {
+                    'originalKernel' : kernel,
+                    'optimizedKernel' : optimizedKernel,
+                    'average_nrmse' : average_nrmse,
+                    'single_nrmse' : single_nrmse,
+                    'trainTime' : trainTime,
+                    'modelSize' : modelSize,
+                    'frequency' : frequencyTestAverage,
+                    'single_R2': single_R2,
+                    'average_R2': average_R2,
+                    'single_medianPeakMiss' : single_medianPeakMiss,
+                    'single_meanPeakMiss' : single_meanPeakMiss
+                    }
+                globals()[dictName][split] = {
+                    annotations[i] : tempDict
+                }
+                print(f'Model train iteration {currentIter}.{currentInternalIter} of {currentIter}.{len(top_n_modelChoices)} ({numIters}) complete. Average NRMSE: {average_nrmse}. ')
+            
+            globals()[dictName][split].update( {
+                'kernelList' : kernelList,
+                'frequencyList' : frequencyList,
+                'nrmse_list' : nrmse_list,
+                'single_nrmse_list' : single_nrmse_list,
+                'R2_list': R2_list,
+                'single_R2_list': single_R2_list,
+                'modelSizeList' : modelSizeList,
+                'trainTimeList' : trainTimeList,
+                'single_medianPeakMissList' : single_medianPeakMissList,
+                'single_meanPeakMissList' : single_meanPeakMissList
+            }
+            )
+
+        end = time.time()
+        currentLoopTimeElapsed = round((end-start)/60,4)
+        completionTime.append(currentLoopTimeElapsed)
+        totalTime = round(np.sum(completionTime),4)
+        estimatedRemainingTime = round((numIters - currentIter)*np.mean(completionTime),4)
+        hours = math.floor(estimatedRemainingTime / 60)
+        minutes = math.floor(estimatedRemainingTime % 60)
+        print(f'Iteration {currentIter} of {numIters} complete. Loop time elapsed: {currentLoopTimeElapsed} minutes')
+        print(f'Total time elapsed: {totalTime} minutes. Estimated time remaining: {hours} hours & {minutes} minute(s). ')
+    
+    #### Save dictionary 
+    saveVersionedPickle(
+    filename=dictName, 
+    objectToSave=globals()[dictName],
+    path = os.path.join(convStudyPath,currentConvStudyTopDir)
+    )
+
+    #### Plotting ####
+    os.chdir(path)
+    print(f'Dictionary name: {dictName}, saved at {str(os.path.join(convStudyPath,currentConvStudyTopDir))}')
+    print('Convergence study complete. ')
+    return globals()[dictName]
+
+
+def buildAndTrainKrig(X_train,X_test, y_train, y_test, kernel,n_restarts,fidelityLevel):  
+
+    krig = None
+    krig = gaussian_process.GaussianProcessRegressor(kernel=kernel,n_restarts_optimizer=n_restarts)
+    start = time.time()
+    krig.fit(X_train, y_train)
+    end = time.time()
+    trainTime = round(end-start,4)
+    krigPickle = pickle.dumps(krig)
+    modelSize = sys.getsizeof(krigPickle)
+    krigPickle = None
+
+    desiredXpredictSize = 1000
+    multiplier = math.floor(desiredXpredictSize/X_train.shape[0])
+    X_predictionSpeed = np.tile(X_train,(multiplier,1))
+    frequencyTempList = []
+    numTestCases = X_predictionSpeed.shape[0]
+    
+    for _ in np.arange(0,1):
+        predictionStart = time.time()
+        krig.predict(X_predictionSpeed)
+        predictionEnd = time.time()
+        predictionTime = predictionEnd-predictionStart
+        print(f'prediction time: {predictionTime}. num test cases: {numTestCases}')
+        frequency = 1/((predictionTime)/numTestCases)
+        frequencyTempList.append(frequency)
+    frequencyTestAverage = np.mean(frequencyTempList)
+
+    single_nrmse, average_nrmse, single_R2, average_R2, single_medianPeakMiss, single_meanPeakMiss = genPredictionsForError(
+        modelType='krig',
+        modelObject=krig,
+        fidelityLevel=fidelityLevel,
+        verbose=False,
+        X_test=X_test,
+        X_train=X_train,
+        y_test=y_test,
+        y_train= y_train
+        )
+    optimizedKernel = krig.kernel_
+    krig = None
+
+    return optimizedKernel, frequencyTestAverage, average_nrmse, single_nrmse, single_R2, average_R2, single_medianPeakMiss, single_meanPeakMiss, trainTime, modelSize
+
+def buildAndTrainNN(X_train, y_train, fidelityLevel, layerSizeList, hyperparamDict, validData,callbacks_list):
+    desiredXpredictSize = 1000
+    multiplier = math.floor(desiredXpredictSize/X_train.shape[0])
+    X_predictionSpeed = np.tile(X_train,(multiplier,1))
+
+    (X_test, y_test) = validData 
+
+    NN = build_model_parameterized(
+            input_data = X_train, 
+            output_data = y_train,
+            layerSizeList = layerSizeList, 
+            rate = hyperparamDict["learningRate"], 
+            regType = hyperparamDict["regType"], 
+            regValue = hyperparamDict["regValue"],
+            hiddenLayerActivation = hyperparamDict["hiddenLayerActivation"],
+            outputLayerActivation = hyperparamDict["outputLayerActivation"],
+            outputLayerDataType= 'float32',
+            kernelInitializer = hyperparamDict["kernelInitializer"],
+            optimizer = hyperparamDict["optimizer"],
+            loss = hyperparamDict["loss"])
+
+    NN_epochs = None
+    NN_history = None
+
+    NN_epochs, NN_history = train_model_all_fidelity(
+        model = NN, 
+        input_data = X_train, 
+        output_data = y_train,
+        numEpochs = hyperparamDict["numEpochs"], 
+        myBatchSize = hyperparamDict["myBatchSize"],
+        validData = validData,
+        callbacks_list= callbacks_list)
+
+    print(f'epochs: {len(NN_epochs)} of {hyperparamDict["numEpochs"]} scheduled.')
+
+    currentLocation = os.getcwd()
+    os.mkdir('temp')
+    os.chdir('temp')
+    NN.save(os.getcwd())
+    modelSize = (get_dir_size('.'))
+
+    os.chdir(currentLocation)
+    shutil.rmtree('temp')
+
+    frequencyTempList = []
+    predictionTimeTempList = []
+    numTestCases = X_predictionSpeed.shape[0]
+    for _ in np.arange(0,200):
+        predictionStart = time.time()
+        NN.predict(X_predictionSpeed)
+        predictionEnd = time.time()
+        predictionTime = predictionEnd-predictionStart
+        predictionTimeTempList.append(predictionTime)
+        frequency = 1/((predictionTime)/numTestCases)
+        frequencyTempList.append(frequency)
+    frequencyTestAverage = np.mean(frequencyTempList)
+
+    single_nrmse, average_nrmse, single_R2, average_R2, single_medianPeakMiss, single_meanPeakMiss = genPredictionsForError(
+        modelType='NN',
+        modelObject=NN,
+        fidelityLevel=fidelityLevel,
+        verbose=False,
+        X_test=X_test,
+        X_train=X_train,
+        y_test=y_test,
+        y_train= y_train
+        )
+    
+    NN = None
+
+    return NN_epochs, NN_history, average_nrmse, single_nrmse, single_R2, average_R2, single_medianPeakMiss, single_meanPeakMiss, modelSize, frequencyTestAverage
+
+
+    for varName in LFinputVarNames: 
+# set up axis location for slider bars
+    axName = 'ax_'+ varName
+    globals()[axName] = plt.axes([0.25, axLocation, 0.65, 0.03])
+    axLocation += .05
+
+    # define the values to use for snapping
+    snapValueName = 'allowed_'+varName
+    globals()[snapValueName] = globals()[varName].reshape(-1,)
+
+    # create sliders
+    sliderName = 'slider_'+varName
+    valmin = globals()[varName].min()
+    valmax = globals()[varName].max()
+    valinit = np.median(globals()[varName])
+    valinitList.append(valinit)
+    globals()[sliderName] = Slider(
+        ax = globals()[axName],
+        label = varName,
+        valmin = valmin,
+        valmax = valmax,
+        valinit = valinit,
+        valstep = globals()[snapValueName]
+    )
+
+modelType = 'krig'
+fidelityLevel = 'LF'
+truncate = True
+# prediction = LF_krig.predict(X_test[0,:].reshape(1,-1))
+
+modelName = f'{fidelityLevel}_{modelType}'
+predictions  = globals()[modelName].predict(X_test[0,:].reshape(1,-1))
+variableNameList = ['qw_plotting', 'p_plotting']
+qw_plotting = np.hsplit(predictions,2)[0]
+p_plotting = np.hsplit(predictions,2)[1]
+if truncate: 
+    leftFluidScalarDistributionLength = globals()[outputVarNames[0]][0,:xSpotLeft].shape[0]
+    rightFluidScalarDistributionLength =  globals()[outputVarNames[0]][0,xSpotLeft:].shape[0]
+    for var in variableNameList:
+        temp_left = [np.tile(entry, leftFluidScalarDistributionLength) for entry in globals()[var][:,0] ]
+        temp_right = [np.tile(entry,rightFluidScalarDistributionLength) for entry in globals()[var][:,1] ]
+        temp_stacked = np.hstack((temp_left,temp_right))
+        globals()[var] = temp_stacked
+        print(var, " shape: ", globals()[var].shape)
