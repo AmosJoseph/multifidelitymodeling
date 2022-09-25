@@ -2832,3 +2832,23 @@ if truncate:
         temp_stacked = np.hstack((temp_left,temp_right))
         globals()[var] = temp_stacked
         print(var, " shape: ", globals()[var].shape)
+
+        
+# for errorMetricKey in errorMetricDict:
+#     print(errorMetricKey)
+#     tempList = [name for name in cleanedConvDict.keys() if (errorMetricDict[errorMetricKey] in name)]
+
+#     if (("median" or "mean") in errorMetricKey):
+        
+#         # print(np.shape(tempList))
+#         peakMissArray = np.asarray([globals()[name] for name in tempList])
+#         print(peakMissArray.shape)
+#         for i, fluidVarName in enumerate(fluidVarNameList):
+#             fig, ax = plt.subplots(constrained_layout=True)
+#             for j, key in enumerate(convDict.keys()): 
+#                 xList = splitList
+#                 yArray = peakMissArray[j,:,i]
+#                 ax.plot(xList, yArray, linestyle='--',c=colors[j],marker=markerList[j], linewidth=0.75,zorder=0, label = labels[j])
+#             ax.set_xlabel('Training Data Split (%)')
+#             ax.set_ylabel(f'{errorMetricKey.capitalize()} {fluidVarName} \n Peak To Peak Percent Difference (%)', wrap=True)
+#             ax.legend()
