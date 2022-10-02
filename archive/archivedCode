@@ -2852,3 +2852,13 @@ if truncate:
 #             ax.set_xlabel('Training Data Split (%)')
 #             ax.set_ylabel(f'{errorMetricKey.capitalize()} {fluidVarName} \n Peak To Peak Percent Difference (%)', wrap=True)
 #             ax.legend()
+
+i+=1
+#MF Krig prediction
+axs[0].plot(x_cc_sorted[0,idxWindowStart::sliceVal], qw_MF_krig_test_predict[case,::sliceVal]/maxHeatTransfer,linestyle='--',c=colors[i], zorder=3, linewidth=3, label=labels[i])
+i+=1
+#HF NN prediction
+axs[0].plot(x_cc_sorted[0,idxWindowStart::sliceVal], qw_HF_NN_test_predict[case,::sliceVal]/maxHeatTransfer,linestyle="-", zorder=3, c=colors[i], linewidth=3, label=labels[i])
+i+=1
+#MF NN prediction
+axs[0].plot(x_cc_sorted[0,idxWindowStart::sliceVal], qw_MF_NN_test_predict[case,::sliceVal]/maxHeatTransfer,linestyle='--', zorder=3,c=colors[i], linewidth=3, label=labels[i])
