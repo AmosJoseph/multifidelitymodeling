@@ -2862,3 +2862,209 @@ axs[0].plot(x_cc_sorted[0,idxWindowStart::sliceVal], qw_HF_NN_test_predict[case,
 i+=1
 #MF NN prediction
 axs[0].plot(x_cc_sorted[0,idxWindowStart::sliceVal], qw_MF_NN_test_predict[case,::sliceVal]/maxHeatTransfer,linestyle='--', zorder=3,c=colors[i], linewidth=3, label=labels[i])
+
+
+def modelConvergenceStudy(
+    fidelityLevel: str, modelType: str, M_inf, inputTrainingData, outputTrainingData, inputTrainingNames, outputTrainingNames, top_n_modelChoices: list, splitList: list, frequencyData: bool, verbose: bool, truncate: bool, hyperparamDict=None, callbacks_list=None, n_restarts=None, 
+    ):
+
+    #Set variables
+    numIters = len(splitList)
+    modelName = fidelityLevel + "_" + modelType
+    dictName = modelName+"_modelConvergenceDict"
+    polyFitDict = {"NN": 1, "krig":2}
+
+    #Initialize data structures
+    completionTime = []
+    globals()[dictName]= dict()
+    
+    #Store list of model choices in dictionary
+    globals()[dictName]["top_n_modelChoices"] = top_n_modelChoices
+
+    #Create list of strings, top model choices. Used in dictionary
+    annotations = [str(item) for item in top_n_modelChoices]
+
+    # Name and create directories/paths
+    currentConvStudyTopDir = modelName + time.strftime("%Y%m%d-%H%M%S")
+    convStudyPath = os.path.join(path,modelConvStudyDir)
+    os.chdir(convStudyPath)
+    os.mkdir(currentConvStudyTopDir)
+    os.chdir(currentConvStudyTopDir)
+
+    ##### Store input and output data in X and y variables
+    if fidelityLevel != 'MF':
+        X = np.hstack(inputTrainingData)
+    if fidelityLevel == 'MF':
+        X = inputTrainingData
+    y = np.hstack(outputTrainingData)
+    Y_names = np.hstack(outputTrainingNames)
+    X_names = np.hstack(inputTrainingNames)
+    originalIdx = np.arange(0,X.shape[0])
+
+    for i, split in enumerate(splitList):
+        start = time.time()
+        test_size = round(1-split,2)
+        currentIter = i+1
+        print(f'Training on {round(split*100,1)} percent of original train data. Data split # {currentIter} of {len(splitList)} begin. ')
+
+        ###### Split Data
+        X_train, X_test, y_train, y_test, M_inf_train, M_inf_test, trainIdx, testIdx = train_test_split(
+            X, y, M_inf, originalIdx, test_size=test_size, random_state=random_state)
+
+        X_test, X_val, y_test, y_val, M_inf_test, M_inf_val, testIdx, valIdx = train_test_split(
+            X_test, y_test, M_inf_test, testIdx, test_size=0.50, random_state=random_state)
+
+        validData = (X_test, y_test)
+
+        if verbose:
+            print("X_train shape: {}".format(X_train.shape))
+            print("X_test shape: {}".format(X_test.shape))
+            print("X_val shape: {}".format(X_val.shape))
+            print("y_train shape: {}".format(y_train.shape))
+            print("y_test shape: {}".format(y_test.shape))
+            print("y_val shape: {}".format(y_val.shape))
+            print(f"concatenation order: {X_names}")
+            print(f"concatenation order: {Y_names}")
+
+        ###### Build and Train Models ######
+
+        ## Initialize Lists ##
+        
+        kernelList = []
+        frequencyList = []
+        nrmse_list = []
+        trainTimeList = [] 
+        modelSizeList = []
+        single_nrmse_list = []
+        R2_list = []
+        single_R2_list = []
+        single_medianPeakMissList = []
+        single_meanPeakMissList = []
+        single_medianStreamwiseMissList = []
+        single_meanStreamwiseMissList = []
+
+        for i, modelArchitecture in enumerate(top_n_modelChoices):
+            currentInternalIter = i+1
+            print(f'Model train iteration {currentIter}.{currentInternalIter} of {currentIter}.{len(top_n_modelChoices)} begin. (Total iters: {len(splitList)}) Model architecture: {str(modelArchitecture)}. ')
+
+            tempDict = {}
+            if modelType == 'NN':
+                NN_epochs, NN_history, trainTime, average_nrmse, single_nrmse, single_R2, average_R2, single_medianPeakMiss, single_meanPeakMiss, single_medianStreamwiseMiss, single_meanStreamwiseMiss, modelSize, frequencyTestAverage = buildAndTrainModel(
+                    X_train=X_train,
+                    y_train=y_train,
+                    fidelityLevel = fidelityLevel,
+                    modelType = modelType,
+                    layerSizeList=modelArchitecture,
+                    hyperparamDict=hyperparamDict,
+                    validData=validData,
+                    callbacks_list = callbacks_list,
+                    truncate = truncate,
+                    verbose=verbose,
+                    frequencyData = frequencyData
+                    )
+                tempDict.update( {
+                'epochs' : NN_epochs,
+                'history' : NN_history,
+                } )
+
+            elif modelType == 'krig':
+                optimizedKernel, trainTime, average_nrmse, single_nrmse, single_R2, average_R2, single_medianPeakMiss, single_meanPeakMiss, single_medianStreamwiseMiss, single_meanStreamwiseMiss, modelSize, frequencyTestAverage = buildAndTrainModel(
+                    X_train=X_train,
+                    y_train=y_train,
+                    fidelityLevel = fidelityLevel,
+                    modelType = modelType,
+                    kernel=modelArchitecture,
+                    n_restarts=n_restarts,
+                    validData=validData,
+                    truncate = truncate,
+                    verbose=verbose,
+                    frequencyData = frequencyData
+                    )
+                kernelList.append(optimizedKernel)
+                tempDict.update( {
+                'originalKernel' : modelArchitecture,
+                'optimizedKernel' : optimizedKernel,
+                } )
+
+            frequencyList.append(frequencyTestAverage)
+            nrmse_list.append(average_nrmse)
+            trainTimeList.append(trainTime)
+            modelSizeList.append(modelSize)
+            single_nrmse_list.append(single_nrmse)
+            R2_list.append(average_R2)
+            single_R2_list.append(single_R2)
+            single_medianPeakMissList.append(single_medianPeakMiss)
+            single_meanPeakMissList.append(single_meanPeakMiss)
+            single_medianStreamwiseMissList.append(single_medianStreamwiseMiss)
+            single_meanStreamwiseMissList.append(single_meanStreamwiseMiss)
+
+            tempDict.update( {
+                'average_nrmse' : average_nrmse,
+                'single_nrmse' : single_nrmse,
+                'trainTime' : trainTime,
+                'modelSize' : modelSize,
+                'frequency' : frequencyTestAverage,
+                'single_R2': single_R2,
+                'average_R2': average_R2,
+                'single_medianPeakMiss' : single_medianPeakMiss,
+                'single_meanPeakMiss' : single_meanPeakMiss,
+                'single_medianStreamwiseMiss' : single_medianStreamwiseMiss,
+                'single_meanStreamwiseMiss' : single_meanStreamwiseMiss
+                } )
+
+            globals()[dictName][split] = {
+                annotations[i] : tempDict
+            }
+
+            print(f'Model train iteration {currentIter}.{currentInternalIter} of {currentIter}.{len(top_n_modelChoices)} complete. (Total iters: {len(splitList)})') 
+            
+            globals()[dictName][split].update( {
+                'modelSizeList' : modelSizeList,
+                'nrmse_list' : nrmse_list,
+                'single_nrmse_list' : single_nrmse_list,
+                'R2_list': R2_list,
+                'single_R2_list': single_R2_list,
+                'frequencyList' : frequencyList,
+                'trainTimeList' : trainTimeList,
+                'single_medianPeakMissList' : single_medianPeakMissList,
+                'single_meanPeakMissList' : single_meanPeakMissList,
+                'single_medianStreamwiseMissList' : single_medianStreamwiseMissList,
+                'single_meanStreamwiseMissList' : single_meanStreamwiseMissList
+            }
+            )
+
+        end = time.time()
+        currentLoopTimeElapsed = round((end-start)/60,4)
+        completionTime.append(currentLoopTimeElapsed)
+        totalTime = round(np.sum(completionTime),4)
+        # estimatedRemainingTime = round((numIters - currentIter)*np.mean(completionTime),4)
+
+        print(f'Iteration {currentIter} of {numIters} complete. Loop time elapsed: {currentLoopTimeElapsed} minutes')
+        polynomialOrder = polyFitDict[modelType]
+        if currentIter != 1:
+            iters = np.arange(0,currentIter)
+            z = np.polyfit(iters,completionTime,polynomialOrder)
+            polynomial = np.poly1d(z)
+            xRemaining = np.arange(currentIter+1,numIters)
+            yRemaining = polynomial(xRemaining)
+            estimatedRemainingTime = round(np.sum(yRemaining),4)
+        else: 
+            estimatedRemainingTime = round((numIters - currentIter)*np.mean(completionTime),4)
+        hoursElapsed = math.floor(totalTime / 60)
+        minutesElapsed = math.floor(totalTime % 60)
+        hoursRemain = math.floor(estimatedRemainingTime / 60)
+        minutesRemain = math.floor(estimatedRemainingTime % 60)
+        print(f'Total time elapsed: {hoursElapsed} hours & {minutesElapsed} minute(s). Estimated time remaining: {hoursRemain} hours & {minutesRemain} minute(s). ')
+
+    #### Save dictionary 
+    saveVersionedPickle(
+    filename=dictName, 
+    objectToSave=globals()[dictName],
+    path = os.path.join(convStudyPath,currentConvStudyTopDir)
+    )
+
+    #### Plotting ####
+    os.chdir(path)
+    print(f'Dictionary name: {dictName}, saved at {str(os.path.join(convStudyPath,currentConvStudyTopDir))}')
+    print('Convergence study complete. ')
+    return globals()[dictName]
